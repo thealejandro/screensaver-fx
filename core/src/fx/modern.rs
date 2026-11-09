@@ -2,6 +2,7 @@
 
 use super::{clamp01, ease_in_out_cubic, ease_out_cubic, flash, noise_ch, settle, shine, Ctx, Effect};
 use crate::color::{gradient, mix, scale, Rgb, WHITE};
+use core::f32::consts::TAU;
 
 fn wf(c: &Ctx) -> f32 {
     c.art.w.max(1) as f32
@@ -389,7 +390,7 @@ struct Spotlights {
 pub fn spotlights(c: &mut Ctx) -> Box<dyn Effect> {
     let mut p = [(0.0, 0.0, 0.0, 0.0); 3];
     for l in p.iter_mut() {
-        *l = (c.rng.range(0.5, 1.1), c.rng.range(0.7, 1.4), c.rng.range(0.0, 6.28), c.rng.range(0.0, 6.28));
+        *l = (c.rng.range(0.5, 1.1), c.rng.range(0.7, 1.4), c.rng.range(0.0, TAU), c.rng.range(0.0, TAU));
     }
     Box::new(Spotlights { p })
 }

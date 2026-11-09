@@ -15,6 +15,10 @@ unsafe fn opt_str(p: *const c_char) -> Option<String> {
 }
 
 /// Crea el motor. `ini` y `art` pueden ser NULL. `accent` es 0x00RRGGBB.
+///
+/// # Safety
+/// `ini` y `art` deben ser NULL o cadenas C válidas terminadas en NUL. El resultado se libera
+/// con `ssfx_free`.
 #[no_mangle]
 pub unsafe extern "C" fn ssfx_new(px_w: i32, px_h: i32, ini: *const c_char, art: *const c_char, accent: u32, seed: u64, sys_lang_es: i32) -> *mut Engine {
     let mut cfg = Config::parse(&opt_str(ini).unwrap_or_default(), Rgb::hex(accent), seed, sys_lang_es != 0);
@@ -22,6 +26,10 @@ pub unsafe extern "C" fn ssfx_new(px_w: i32, px_h: i32, ini: *const c_char, art:
     Box::into_raw(Box::new(Engine::new(px_w, px_h, cfg)))
 }
 
+/// Libera el motor.
+///
+/// # Safety
+/// `e` debe ser NULL o un puntero de `ssfx_new` que aún no se haya liberado.
 #[no_mangle]
 pub unsafe extern "C" fn ssfx_free(e: *mut Engine) {
     if !e.is_null() {
@@ -30,6 +38,9 @@ pub unsafe extern "C" fn ssfx_free(e: *mut Engine) {
 }
 
 /// Devuelve 1 si cambió algún píxel.
+///
+/// # Safety
+/// `e` debe ser NULL o un motor vivo de `ssfx_new`; `now`, NULL o un `SsfxWallTime` válido.
 #[no_mangle]
 pub unsafe extern "C" fn ssfx_tick(e: *mut Engine, t: f64, now: *const WallTime) -> i32 {
     match e.as_mut() {
@@ -39,6 +50,10 @@ pub unsafe extern "C" fn ssfx_tick(e: *mut Engine, t: f64, now: *const WallTime)
 }
 
 /// Búfer BGRX de 32 bits por píxel, sin relleno entre filas.
+///
+/// # Safety
+/// `e` debe ser NULL o un motor vivo; `w` y `h`, NULL o punteros a `int32_t` escribibles. El
+/// búfer devuelto vale hasta el siguiente `ssfx_tick` o `ssfx_free`.
 #[no_mangle]
 pub unsafe extern "C" fn ssfx_pixels(e: *const Engine, w: *mut i32, h: *mut i32) -> *const u32 {
     let Some(e) = e.as_ref() else { return ptr::null() };
@@ -54,6 +69,9 @@ pub unsafe extern "C" fn ssfx_pixels(e: *const Engine, w: *mut i32, h: *mut i32)
 
 /// Rectángulo destino {x, y, w, h} en píxeles de pantalla (origen arriba a la izquierda).
 /// Devuelve 1 si el búfer se reduce (conviene filtrado suave) y 0 si se amplía (vecino más cercano).
+///
+/// # Safety
+/// `e` debe ser NULL o un motor vivo; `out`, NULL o un array de 4 `int32_t` escribibles.
 #[no_mangle]
 pub unsafe extern "C" fn ssfx_dest(e: *const Engine, out: *mut i32) -> i32 {
     let Some(e) = e.as_ref() else { return 0 };
