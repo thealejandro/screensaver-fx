@@ -70,7 +70,10 @@ pub fn compute_layout(w: i32, h: i32, size: Size, min_cols: i32, min_rows: i32) 
     // fraccional (vecino más cercano) que llena la pantalla igual.
     let frac = (ideal as f32).min(w as f32 / (cw * min_cols) as f32).min(h as f32 / (ch * min_rows) as f32);
     if k < ideal && frac >= k as f32 + 0.25 {
-        let (cols, rows) = ((w as f32 / (cw as f32 * frac)) as i32, (h as f32 / (ch as f32 * frac)) as i32);
+        // `frac` ya garantiza que caben min_cols x min_rows; el max evita perder una celda por
+        // redondeo (60,9999 -> 60).
+        let cols = ((w as f32 / (cw as f32 * frac)) as i32).max(min_cols);
+        let rows = ((h as f32 / (ch as f32 * frac)) as i32).max(min_rows);
         let (bw, bh) = (cols * cw, rows * ch);
         let (dw, dh) = ((bw as f32 * frac).round() as i32, (bh as f32 * frac).round() as i32);
         return Layout { cols, rows, buf_w: bw, buf_h: bh, dst_x: (w - dw) / 2, dst_y: (h - dh) / 2, dst_w: dw, dst_h: dh, scaled_down: false };
@@ -90,12 +93,14 @@ pub fn compute_layout(w: i32, h: i32, size: Size, min_cols: i32, min_rows: i32) 
             scaled_down: false,
         };
     }
-    // Rejilla virtual mínima con el aspecto de la pantalla, reducida al dibujar.
+    // Rejilla virtual mínima con el aspecto de la pantalla, reducida al dibujar. El aspecto se
+    // acota: una ventana de 1 px de ancho pedía un búfer de cientos de MB (queda con bandas).
+    let (aw, ah) = ((w as f32).min(h as f32 * 4.0), (h as f32).min(w as f32 * 4.0));
     let mut rows = min_rows;
-    let mut cols = ((rows * ch) as f32 * w as f32 / h as f32 / cw as f32).round() as i32;
+    let mut cols = ((rows * ch) as f32 * aw / ah / cw as f32).round() as i32;
     if cols < min_cols {
         cols = min_cols;
-        rows = (((cols * cw) as f32 * h as f32 / w as f32 / ch as f32).round() as i32).max(min_rows);
+        rows = (((cols * cw) as f32 * ah / aw / ch as f32).round() as i32).max(min_rows);
     }
     let (bw, bh) = (cols * cw, rows * ch);
     let s = (w as f32 / bw as f32).min(h as f32 / bh as f32);
@@ -182,7 +187,11 @@ impl Engine {
 
     fn start_next(&mut self, t: f64) {
         let set = &self.cfg.effects;
-        let pool: Vec<usize> = if set.len() > 1 { set.iter().copied().filter(|&i| Some(i) != self.last_fx).collect() } else { set.clone() };
+        let mut pool: Vec<usize> = set.iter().copied().filter(|&i| Some(i) != self.last_fx).collect();
+        // Un solo efecto (o el mismo repetido, `effects=neon,neon`): se repite.
+        if pool.is_empty() {
+            pool = set.clone();
+        }
         let idx = pool[self.ctx.rng.below(pool.len())];
         if self.cfg.theme == ThemeSel::Random {
             self.ctx.pal = THEMES[self.ctx.rng.below(THEMES.len())].palette();
@@ -197,6 +206,11 @@ impl Engine {
     /// Avanza la animación a `t` segundos (monótono, desde el inicio). Devuelve true si cambió
     /// algún píxel: si es false la plataforma puede saltarse el dibujado.
     pub fn tick(&mut self, t: f64, now: WallTime) -> bool {
+        if !t.is_finite() {
+            // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora.
+            self.raster.dirty = None;
+            return false;
+        }
         let dt = (t - self.last_t).clamp(0.0, 0.1) as f32;
         self.last_t = t;
         self.ctx.now = now;
@@ -215,5 +229,197 @@ impl Engine {
             }
         }
         self.raster.update(&self.ctx.g)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RESOLUTIONS: [(i32, i32); 14] = [
+        (320, 240),
+        (640, 480),
+        (800, 600),
+        (1024, 768),
+        (1280, 720),
+        (1366, 768),
+        (1920, 1080),
+        (2560, 1080),
+        (2560, 1440),
+        (3440, 1440),
+        (3840, 2160),
+        (5120, 2880),
+        (1080, 1920),
+        (152, 112), // vista previa de Configuración de Windows
+    ];
+
+    fn default_mins() -> (i32, i32) {
+        let a = Art::default_art();
+        ((a.w + 8).max(40), a.h + 10)
+    }
+
+    /// Invariantes que toda disposición debe cumplir.
+    fn check(l: &Layout, w: i32, h: i32, mc: i32, mr: i32) {
+        let what = format!("{w}x{h} min {mc}x{mr}: {l:?}");
+        let (sw, sh) = (w.max(1), h.max(1));
+        assert!(l.cols >= 1 && l.rows >= 1, "{what}");
+        assert_eq!((l.buf_w, l.buf_h), (l.cols * CW as i32, l.rows * CH as i32), "{what}");
+        // El rótulo cabe en la rejilla.
+        assert!(l.cols >= mc && l.rows >= mr, "{what}: el rótulo no cabe");
+        // Destino dentro de la pantalla y centrado.
+        assert!(l.dst_w >= 1 && l.dst_h >= 1, "{what}");
+        assert!(l.dst_x >= 0 && l.dst_y >= 0, "{what}");
+        assert!(l.dst_x + l.dst_w <= sw && l.dst_y + l.dst_h <= sh, "{what}: se sale de la pantalla");
+        assert!((0..=1).contains(&(sw - l.dst_w - 2 * l.dst_x)), "{what}: no centrado en x");
+        assert!((0..=1).contains(&(sh - l.dst_h - 2 * l.dst_y)), "{what}: no centrado en y");
+        // Mantiene la proporción (error de redondeo de 1 px).
+        let err = (l.dst_w as i64 * l.buf_h as i64 - l.dst_h as i64 * l.buf_w as i64).abs();
+        assert!(err <= l.buf_w.max(l.buf_h) as i64, "{what}: deforma la imagen");
+        if l.scaled_down {
+            assert!(l.dst_w <= l.buf_w && l.dst_h <= l.buf_h, "{what}");
+            assert_eq!(l.int_scale(), None, "{what}");
+        } else {
+            assert!(l.dst_w >= l.buf_w && l.dst_h >= l.buf_h, "{what}");
+            // Sin reducir, ocupa la pantalla salvo lo que no llega a una celda escalada.
+            let k = l.dst_w as f32 / l.buf_w as f32;
+            assert!((sw - l.dst_w) as f32 <= CW as f32 * k + 1.0 && (sh - l.dst_h) as f32 <= CH as f32 * k + 1.0, "{what}: deja demasiado borde");
+        }
+        if let Some(k) = l.int_scale() {
+            assert!(k >= 1 && !l.scaled_down, "{what}");
+            assert_eq!((l.dst_w, l.dst_h), (l.buf_w * k, l.buf_h * k), "{what}");
+        } else if !l.scaled_down && l.dst_w % l.buf_w == 0 && l.dst_h == l.buf_h * (l.dst_w / l.buf_w) {
+            panic!("{what}: escala entera no detectada");
+        }
+        // Búfer de tamaño razonable: nunca mayor que la pantalla o que el mínimo del rótulo
+        // estirado a un aspecto 1:4 (antes, una ventana de 1x1080 pedía 257 millones de píxeles).
+        let area = l.buf_w as i64 * l.buf_h as i64;
+        let side = ((mc * CW as i32) as i64).max((mr * CH as i32) as i64);
+        assert!(area <= (sw as i64 * sh as i64).max(4 * side * (side + CH as i64)), "{what}: búfer desmesurado ({area} px)");
+    }
+
+    #[test]
+    fn layout_common_resolutions_m() {
+        let (mc, mr) = default_mins();
+        let cases = [
+            ((1920, 1080), Layout { cols: 120, rows: 33, buf_w: 960, buf_h: 528, dst_x: 0, dst_y: 12, dst_w: 1920, dst_h: 1056, scaled_down: false }, Some(2)),
+            ((3840, 2160), Layout { cols: 120, rows: 33, buf_w: 960, buf_h: 528, dst_x: 0, dst_y: 24, dst_w: 3840, dst_h: 2112, scaled_down: false }, Some(4)),
+            ((1280, 720), Layout { cols: 160, rows: 45, buf_w: 1280, buf_h: 720, dst_x: 0, dst_y: 0, dst_w: 1280, dst_h: 720, scaled_down: false }, Some(1)),
+            ((2560, 1440), Layout { cols: 106, rows: 30, buf_w: 848, buf_h: 480, dst_x: 8, dst_y: 0, dst_w: 2544, dst_h: 1440, scaled_down: false }, Some(3)),
+            ((1080, 1920), Layout { cols: 67, rows: 60, buf_w: 536, buf_h: 960, dst_x: 4, dst_y: 0, dst_w: 1072, dst_h: 1920, scaled_down: false }, Some(2)),
+        ];
+        for ((w, h), want, k) in cases {
+            let l = compute_layout(w, h, Size::M, mc, mr);
+            assert_eq!(l, want, "{w}x{h}");
+            assert_eq!(l.int_scale(), k, "{w}x{h}");
+            check(&l, w, h, mc, mr);
+        }
+    }
+
+    #[test]
+    fn layout_small_screen_scales_down() {
+        let (mc, mr) = default_mins();
+        let l = compute_layout(320, 240, Size::M, mc, mr);
+        check(&l, 320, 240, mc, mr);
+        assert!(l.scaled_down);
+        assert_eq!(l.int_scale(), None);
+        assert_eq!((l.cols, l.rows), (67, 25));
+        for (w, h) in [(152, 112), (100, 75), (64, 64), (10, 10), (1, 1), (2, 1), (1, 2)] {
+            let l = compute_layout(w, h, Size::M, mc, mr);
+            check(&l, w, h, mc, mr);
+            assert!(l.scaled_down, "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn layout_zero_and_negative_sizes_do_not_panic() {
+        let (mc, mr) = default_mins();
+        for (w, h) in [(0, 0), (-1, -1), (0, 1080), (1920, 0), (i32::MIN, i32::MIN), (-1920, 1080)] {
+            let l = compute_layout(w, h, Size::M, mc, mr);
+            check(&l, w, h, mc, mr);
+        }
+    }
+
+    #[test]
+    fn layout_degenerate_aspect_keeps_buffer_small() {
+        // Ventanas de 1 px de ancho o de alto (p. ej. al crearse o redimensionarse).
+        let (mc, mr) = default_mins();
+        for (w, h) in [(1, 1080), (1, 2160), (2, 4000), (1920, 1), (3840, 2), (10, 1000), (1000, 10)] {
+            let l = compute_layout(w, h, Size::M, mc, mr);
+            check(&l, w, h, mc, mr);
+        }
+    }
+
+    #[test]
+    fn layout_all_sizes_and_resolutions() {
+        let arts = [
+            Art::default_art(),
+            Art::parse("X").unwrap(),
+            Art::from_text(&"W".repeat(16), &"W".repeat(32)).unwrap(),
+            Art::parse(&vec!["#".repeat(400); 200].join("\n")).unwrap(),
+            Art::parse(&vec!["#".repeat(120); 60].join("\n")).unwrap(),
+        ];
+        for art in &arts {
+            let (mc, mr) = ((art.w + 8).max(40), art.h + 10);
+            for &(w, h) in &RESOLUTIONS {
+                for size in [Size::S, Size::M, Size::L] {
+                    check(&compute_layout(w, h, size, mc, mr), w, h, mc, mr);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn layout_bigger_size_means_bigger_scale() {
+        let (mc, mr) = default_mins();
+        for &(w, h) in &RESOLUTIONS {
+            let scale = |s| {
+                let l = compute_layout(w, h, s, mc, mr);
+                l.dst_w as f32 / l.buf_w as f32
+            };
+            let (s, m, l) = (scale(Size::S), scale(Size::M), scale(Size::L));
+            assert!(s <= m && m <= l, "{w}x{h}: S {s} M {m} L {l}");
+        }
+        let at4k = |s| compute_layout(3840, 2160, s, mc, mr).int_scale();
+        assert_eq!((at4k(Size::S), at4k(Size::M), at4k(Size::L)), (Some(3), Some(4), Some(5)));
+    }
+
+    #[test]
+    fn layout_sweep() {
+        // Barrido denso de tamaños para pillar errores de redondeo en las tres ramas.
+        let (mc, mr) = default_mins();
+        let mins = [(mc, mr), (40, 11), (294, 23), (408, 210), (130, 70)];
+        for &(mc, mr) in &mins {
+            for w in (1..=4000).step_by(97) {
+                for h in (1..=2400).step_by(61) {
+                    for size in [Size::S, Size::M, Size::L] {
+                        check(&compute_layout(w, h, size, mc, mr), w, h, mc, mr);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn layout_fractional_scale_for_long_banners() {
+        // Rótulo largo en 4K: la escala entera que cabe (1) quedaría pequeña; se usa una fraccional.
+        let art = Art::from_text("SCREENSAVER FX", "").unwrap();
+        let (mc, mr) = ((art.w + 8).max(40), art.h + 10);
+        let l = compute_layout(3840, 2160, Size::M, mc, mr);
+        check(&l, 3840, 2160, mc, mr);
+        assert!(!l.scaled_down);
+        let k = l.dst_w as f32 / l.buf_w as f32;
+        assert!(k > 1.25, "{l:?}");
+    }
+
+    #[test]
+    fn int_scale_rules() {
+        let base = Layout { cols: 10, rows: 5, buf_w: 80, buf_h: 80, dst_x: 0, dst_y: 0, dst_w: 160, dst_h: 160, scaled_down: false };
+        assert_eq!(base.int_scale(), Some(2));
+        assert_eq!(Layout { dst_w: 80, dst_h: 80, ..base }.int_scale(), Some(1));
+        assert_eq!(Layout { dst_w: 120, dst_h: 120, ..base }.int_scale(), None);
+        assert_eq!(Layout { dst_w: 160, dst_h: 150, ..base }.int_scale(), None);
+        assert_eq!(Layout { scaled_down: true, ..base }.int_scale(), None);
+        assert_eq!(Layout { dst_w: 40, dst_h: 40, ..base }.int_scale(), None);
+        assert_eq!(Layout { buf_w: 0, ..base }.int_scale(), None);
     }
 }

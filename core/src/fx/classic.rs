@@ -226,7 +226,7 @@ const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "Jun
 
 pub fn long_date(lang: Lang, n: &crate::WallTime) -> String {
     let wd = n.weekday.rem_euclid(7) as usize;
-    let m = (n.month - 1).clamp(0, 11) as usize;
+    let m = (n.month.clamp(1, 12) - 1) as usize;
     match lang {
         Lang::Es => format!("{}, {} de {} de {}", DIAS[wd], n.day, MESES[m], n.year),
         Lang::En => format!("{}, {} {}, {}", DAYS[wd], MONTHS[m], n.day, n.year),
