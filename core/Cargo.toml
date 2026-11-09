@@ -1,0 +1,16 @@
+[package]
+name = "ssfx-core"
+version = "0.1.0"
+edition = "2021"
+description = "Motor de animaciones de Screensaver FX (rejilla de celdas, sin dependencias de plataforma)"
+license = "MIT"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
+
+# Solo para las herramientas de examples/ (snap, brand); no entra en el protector.
+[dev-dependencies]
+miniz_oxide = "0.8"
