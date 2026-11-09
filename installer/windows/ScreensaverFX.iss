@@ -622,21 +622,51 @@ end;
 
 { --- Desinstalación -------------------------------------------------------- }
 
+{ Carpeta de la otra instalación (para todos / solo para mí), si la hay. }
+function OtherInstallDir: String;
+var
+  Root: Integer;
+begin
+  Result := '';
+  if IsAdminInstallMode then
+    Root := HKCU
+  else
+    Root := HKLM;
+  if RegQueryStringValue(Root, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6B0E3F2A-5C1D-4E8B-9A7F-3D2C1B0A9E8F}_is1',
+     'InstallLocation', Result) and FileExists(AddBackslash(Result) + 'ScreensaverFX.exe') then
+    Result := AddBackslash(Result)
+  else
+    Result := '';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Cur: String;
+  Cur, Other: String;
+  Code: Integer;
 begin
+  Other := OtherInstallDir;
   if CurUninstallStep = usUninstall then
   begin
     StopWatcher;
+    { Solo si apunta a este protector: no desactiva el de la otra instalación. }
     if RegQueryStringValue(HKCU, DESKTOP_KEY, 'SCRNSAVE.EXE', Cur) and
-       (Pos('screensaverfx', Lowercase(Cur)) > 0) then
+       ((CompareText(Cur, ExpandConstant('{app}\ScreensaverFX.scr')) = 0) or
+        ((Other = '') and (Pos('screensaverfx', Lowercase(Cur)) > 0))) then
     begin
       RegDeleteValue(HKCU, DESKTOP_KEY, 'SCRNSAVE.EXE');
       SystemParametersInfo(SPI_SETSCREENSAVEACTIVE, 0, 0, SPIF_UPDATE);
     end;
   end;
-  if (CurUninstallStep = usPostUninstall) and DirExists(ExpandConstant('{userappdata}\ScreensaverFX')) then
+  if CurUninstallStep <> usPostUninstall then
+    Exit;
+  if Other <> '' then
+  begin
+    { Queda la otra instalación: su vigilante vuelve a correr (sin elevar) y la configuración se queda. }
+    if not IsAdminInstallMode then
+      Exec(Other + 'ScreensaverFX.exe', '/watch', '', SW_HIDE, ewNoWait, Code);
+    Exit;
+  end;
+  if DirExists(ExpandConstant('{userappdata}\ScreensaverFX')) then
     if SuppressibleMsgBox(CustomMessage('DeleteConfig'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
       DelTree(ExpandConstant('{userappdata}\ScreensaverFX'), True, True, True);
 end;
