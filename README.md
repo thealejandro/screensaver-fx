@@ -15,6 +15,10 @@ Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las an
 
   Para desinstalar: `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/thealejandro/screensaver-fx/main/install.ps1))) -Uninstall`
 
+«Para todos los usuarios» (pide administrador) lo deja en `System32`, en la lista de protectores de Windows para cualquier cuenta; «Solo para mí» no pide permisos.
+
+Algunas apps en primer plano bloquean el protector de Windows aunque no estén reproduciendo nada. Por eso se instala un vigilante mínimo (`ScreensaverFX.exe /watch`, ~1,3 MB, arranca con la sesión): si pasa el tiempo de espera y Windows no lanzó el protector configurado, lo lanza él. Respeta lo mismo que Windows: vídeo o videollamadas, presentaciones, pantalla completa, sesión bloqueada y «Mostrar la pantalla de inicio de sesión al reanudar».
+
 El instalador no está firmado, así que SmartScreen puede avisar: «Más información» › «Ejecutar de todas formas».
 
 ### macOS 11 o posterior
