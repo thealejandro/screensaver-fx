@@ -60,8 +60,12 @@ Check "watch.log escrito" (WaitFor { (Test-Path "$data\watch.log") -and (Select-
 Start-Process $exe -ArgumentList '/watch'
 Start-Sleep 2
 Check "una sola instancia por sesión" ((Procs '/watch').Count -eq 1)
-Start-Process $exe -ArgumentList '/unwatch' -Wait
+[void](Start-Process $exe -ArgumentList '/unwatch' -PassThru).WaitForExit(15000)
 Check "/unwatch lo detiene" (WaitFor { (Procs '/watch').Count -eq 0 } 5)
+# Sin etiqueta (0.0.0) no busca; con etiqueta consulta la release publicada (que es más antigua).
+$u = Start-Process $exe -ArgumentList '/update' -PassThru
+Check "/update termina" ($u.WaitForExit(90000))
+Check "/update deja constancia" (Select-String -Path "$data\watch.log" -Pattern 'actualizaciones: (al día|compilación de desarrollo)' -Quiet) ((Get-Content "$data\watch.log" -Tail 2) -join ' | ')
 
 Write-Host "3) Protector, vista previa y configuración"
 $s = Start-Process $exe -ArgumentList '/s' -PassThru

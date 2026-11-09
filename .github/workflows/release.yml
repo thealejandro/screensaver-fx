@@ -27,6 +27,7 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"; [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || V=0.0.0
           echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "SSFX_VERSION=$V" >> "$GITHUB_ENV" # update.rs: versión que compara con la última release
           sed -i "s/0\.1\.0/$V/g; s/0,1,0,0/${V//./,},0/g" windows/res/app.rc
 
       - name: llvm-mingw
@@ -45,6 +46,16 @@ jobs:
 
       - name: Pruebas
         run: cargo test -p ssfx-core -p screensaver-fx --release --target x86_64-pc-windows-gnullvm
+
+      # Solo DLL que trae Windows: una de llvm-mingw (libunwind.dll) solo existe en la máquina que compila.
+      - name: Dependencias del sistema
+        run: |
+          for t in x86_64 aarch64; do
+            for d in $(llvm-objdump -p target/$t-pc-windows-gnullvm/release/ScreensaverFX.exe | sed -n 's/.*DLL Name: //p'); do
+              case "${d,,}" in api-ms-win-*) continue ;; esac
+              [ -f "/c/Windows/System32/$d" ] || { echo "::error::$t depende de $d, que no viene con Windows"; exit 1; }
+            done
+          done
 
       - name: Inno Setup
         shell: pwsh
@@ -95,6 +106,7 @@ jobs:
       matrix:
         os: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -112,6 +124,7 @@ jobs:
       matrix:
         os: [macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
