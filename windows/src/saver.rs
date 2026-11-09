@@ -39,6 +39,36 @@ fn quit() {
     unsafe { PostQuitMessage(0) };
 }
 
+/// Ganchos de bajo nivel: salen con cualquier tecla, clic o movimiento aunque la ventana no
+/// tenga el foco (Windows no deja tomarlo a un proceso lanzado por el vigilante). La tecla o el
+/// clic que despierta se consume, como en el protector del sistema, para que no llegue a la app.
+unsafe extern "system" fn key_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        quit();
+        return 1;
+    }
+    CallNextHookEx(core::ptr::null_mut(), code, wp, lp)
+}
+
+unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        match wp as u32 {
+            WM_MOUSEMOVE => {
+                let p = (*(lp as *const MSLLHOOKSTRUCT)).pt;
+                let s = START.get();
+                if (p.x - s.x).abs() > MOUSE_SLOP || (p.y - s.y).abs() > MOUSE_SLOP {
+                    quit();
+                }
+            }
+            _ => {
+                quit();
+                return 1;
+            }
+        }
+    }
+    CallNextHookEx(core::ptr::null_mut(), code, wp, lp)
+}
+
 /// Copia el búfer a la ventana. `full`: todo el búfer y bordes en negro (WM_PAINT).
 unsafe fn blit(s: &Saver, hdc: HDC, full: bool) {
     let l = s.engine.layout();
@@ -195,6 +225,7 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
         }
         let first = SAVERS.with(|v| v.borrow().first().map(|s| s.hwnd));
         let Some(first) = first else { return };
+        let mut hooks: [HHOOK; 2] = [core::ptr::null_mut(); 2];
         if !preview {
             let mut p: POINT = core::mem::zeroed();
             GetCursorPos(&mut p);
@@ -202,6 +233,7 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             ShowCursor(FALSE);
             SetForegroundWindow(first);
             SetFocus(first);
+            hooks = [SetWindowsHookExW(WH_KEYBOARD_LL, Some(key_hook), hinst, 0), SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), hinst, 0)];
         }
 
         let t0 = Instant::now();
@@ -235,6 +267,9 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             if DwmFlush() < 0 {
                 Sleep(8);
             }
+        }
+        for h in hooks.into_iter().filter(|h| !h.is_null()) {
+            UnhookWindowsHookEx(h);
         }
         if !preview {
             ShowCursor(TRUE);
