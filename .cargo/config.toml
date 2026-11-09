@@ -1,6 +1,10 @@
 # Windows se compila con llvm-mingw (sin Visual Studio): target x86_64-pc-windows-gnullvm.
+# +crt-static enlaza libunwind dentro del .exe: sin él depende de libunwind.dll, que solo existe
+# donde está instalado llvm-mingw, y en cualquier otro equipo el protector no llega a arrancar.
 [target.x86_64-pc-windows-gnullvm]
 linker = "x86_64-w64-mingw32-clang"
+rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-gnullvm]
 linker = "aarch64-w64-mingw32-clang"
+rustflags = ["-C", "target-feature=+crt-static"]
