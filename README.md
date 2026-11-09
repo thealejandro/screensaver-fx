@@ -19,6 +19,17 @@ Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las an
 
 Algunas apps en primer plano bloquean el protector de Windows aunque no estén reproduciendo nada. Por eso se instala un vigilante mínimo (`ScreensaverFX.exe /watch`, ~1,3 MB, arranca con la sesión): si pasa el tiempo de espera y Windows no lanzó el protector configurado, lo lanza él. Respeta lo mismo que Windows: vídeo o videollamadas, presentaciones, pantalla completa, sesión bloqueada y «Mostrar la pantalla de inicio de sesión al reanudar».
 
+Lo que hace queda en `%APPDATA%\ScreensaverFX\watch.log` (por qué lo lanzó o por qué no).
+
+### Actualizaciones automáticas
+
+Screensaver FX se actualiza solo desde las [releases](https://github.com/thealejandro/screensaver-fx/releases), sin tocar tu configuración ni el protector que tengas elegido:
+
+- **Para todos los usuarios**: la tarea programada `ScreensaverFX\Update` (como SYSTEM) busca al arrancar el equipo y una vez al día. Registro en `%ProgramData%\ScreensaverFX\update.log`.
+- **Solo para mí**: el vigilante busca a los 3 minutos de iniciar sesión y luego cada 24 h. Registro en `watch.log`.
+
+Nunca instala con el protector o la configuración abiertos. El instalador se descarga por HTTPS y se comprueba con la suma SHA-256 publicada en la release antes de ejecutarlo. Para buscar a mano: `ScreensaverFX.exe /update`.
+
 El instalador no está firmado, así que SmartScreen puede avisar: «Más información» › «Ejecutar de todas formas».
 
 ### macOS 11 o posterior
