@@ -1,0 +1,4 @@
+#!/bin/sh
+# Reinicia el proceso de salvapantallas para que cargue la versión nueva.
+killall legacyScreenSaver 2>/dev/null || true
+exit 0
