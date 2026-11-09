@@ -1,9 +1,11 @@
-# Publica una versión al subir una etiqueta: git tag v0.1.0 && git push --tags
+# Compila y prueba en cada cambio; al subir una etiqueta (git tag v0.1.0 && git push --tags) publica la versión.
 name: release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -41,6 +43,9 @@ jobs:
           cargo build -p screensaver-fx --release --target x86_64-pc-windows-gnullvm
           cargo build -p screensaver-fx --release --target aarch64-pc-windows-gnullvm
 
+      - name: Pruebas
+        run: cargo test -p ssfx-core -p screensaver-fx --release --target x86_64-pc-windows-gnullvm
+
       - name: Inno Setup
         shell: pwsh
         run: |
@@ -72,6 +77,9 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $V" macos/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" macos/Info.plist
 
+      - name: Pruebas
+        run: cargo test -p ssfx-core --release
+
       - name: Compilar y empaquetar
         run: ./macos/package.sh
 
@@ -80,8 +88,41 @@ jobs:
           name: macos
           path: dist/*
 
+  qa-windows:
+    needs: windows
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+      - name: QA del instalador
+        shell: pwsh
+        run: ./.github/qa/windows.ps1 -Setup dist/ScreensaverFX-Setup.exe
+
+  qa-macos:
+    needs: macos
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: dist
+      - name: QA de los paquetes
+        run: bash .github/qa/macos.sh dist
+
   release:
-    needs: [windows, macos]
+    needs: [windows, macos, qa-windows, qa-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
