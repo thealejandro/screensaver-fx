@@ -177,3 +177,191 @@ pub static THEMES: [ThemeDef; 11] = [
 pub fn theme_index(id: &str) -> Option<usize> {
     THEMES.iter().position(|t| t.id_str().eq_ignore_ascii_case(id))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dist(a: Rgb, b: Rgb) -> i32 {
+        (a.0 as i32 - b.0 as i32).abs() + (a.1 as i32 - b.1 as i32).abs() + (a.2 as i32 - b.2 as i32).abs()
+    }
+
+    /// Lo que garantiza `build_palette`: 2..=4 colores legibles y distintos, o el respaldo.
+    fn assert_valid_palette(p: &[Rgb], what: &str) {
+        assert!((2..=4).contains(&p.len()), "{what}: {} colores", p.len());
+        if p == FALLBACK {
+            return;
+        }
+        for (i, &c) in p.iter().enumerate() {
+            assert!(c.u32() <= 0x00FF_FFFF, "{what}");
+            assert!(c != BLACK, "{what}: negro invisible sobre el fondo");
+            assert!(luminance(c) >= 0.22, "{what}: {c:?} demasiado oscuro ({})", luminance(c));
+            for &o in &p[..i] {
+                assert!(dist(c, o) > 60, "{what}: {c:?} y {o:?} casi iguales");
+            }
+        }
+    }
+
+    #[test]
+    fn hex_and_u32_round_trip() {
+        assert_eq!(Rgb::hex(0x123456), Rgb(0x12, 0x34, 0x56));
+        assert_eq!(Rgb(0x12, 0x34, 0x56).u32(), 0x0012_3456);
+        assert_eq!(WHITE.u32(), 0x00FF_FFFF);
+        assert_eq!(BLACK.u32(), 0);
+        // El byte alto se ignora (0x00RRGGBB).
+        assert_eq!(Rgb::hex(0xFF12_3456), Rgb(0x12, 0x34, 0x56));
+        for v in [0u32, 1, 0xFF, 0xFF00, 0xFF0000, 0x7F7F7F, 0xABCDEF] {
+            assert_eq!(Rgb::hex(v).u32(), v);
+        }
+    }
+
+    #[test]
+    fn mix_endpoints_and_clamp() {
+        let (a, b) = (Rgb(10, 20, 30), Rgb(210, 120, 0));
+        assert_eq!(mix(a, b, 0.0), a);
+        assert_eq!(mix(a, b, 1.0), b);
+        assert_eq!(mix(a, b, -5.0), a);
+        assert_eq!(mix(a, b, 7.0), b);
+        assert_eq!(mix(a, b, 0.5), Rgb(110, 70, 15));
+        assert_eq!(mix(a, b, f32::NAN), mix(a, b, f32::NAN)); // no entra en pánico
+    }
+
+    #[test]
+    fn scale_saturates() {
+        assert_eq!(scale(Rgb(100, 200, 50), 0.0), BLACK);
+        assert_eq!(scale(Rgb(100, 200, 50), -3.0), BLACK);
+        assert_eq!(scale(Rgb(100, 200, 50), 1.0), Rgb(100, 200, 50));
+        assert_eq!(scale(Rgb(100, 200, 50), 2.0), Rgb(200, 255, 100));
+        assert_eq!(scale(WHITE, 100.0), WHITE);
+    }
+
+    #[test]
+    fn luminance_range() {
+        assert_eq!(luminance(BLACK), 0.0);
+        assert!((luminance(WHITE) - 1.0).abs() < 1e-4);
+        assert!(luminance(Rgb(0, 255, 0)) > luminance(Rgb(255, 0, 0)));
+        assert!(luminance(Rgb(255, 0, 0)) > luminance(Rgb(0, 0, 255)));
+    }
+
+    #[test]
+    fn gradient_is_cyclic_and_safe() {
+        assert_eq!(gradient(&[], 0.3), WHITE);
+        let pal = [Rgb(255, 0, 0), Rgb(0, 0, 255)];
+        assert_eq!(gradient(&pal, 0.0), pal[0]);
+        assert_eq!(gradient(&pal, 0.5), pal[1]);
+        assert_eq!(gradient(&pal, 1.0), pal[0]);
+        assert_eq!(gradient(&pal, -1.0), pal[0]);
+        assert_eq!(gradient(&pal, 3.25), gradient(&pal, 0.25));
+        assert_eq!(gradient(&[Rgb(1, 2, 3)], 0.77), Rgb(1, 2, 3));
+        for t in [-1e6f32, -0.999, 0.999_999, 1e6, f32::MAX, f32::NAN, f32::INFINITY] {
+            gradient(&pal, t); // sin pánico
+        }
+    }
+
+    #[test]
+    fn build_palette_rules() {
+        assert_eq!(build_palette(&[]), FALLBACK.to_vec());
+        assert_eq!(build_palette(&[Rgb(200, 50, 50)]), FALLBACK.to_vec(), "un solo color no es paleta");
+        assert_eq!(build_palette(&[WHITE, WHITE, WHITE]), FALLBACK.to_vec(), "sin repetidos");
+        // Como mucho cuatro.
+        let many: Vec<Rgb> = (0..12).map(|i| Rgb((i * 20) as u8, 255 - (i * 20) as u8, if i % 2 == 0 { 255 } else { 0 })).collect();
+        let p = build_palette(&many);
+        assert_eq!(p.len(), 4);
+        assert_valid_palette(&p, "many");
+        // Los oscuros se aclaran hasta leerse sobre negro.
+        let p = build_palette(&[BLACK, Rgb(0, 0, 80), Rgb(80, 0, 0)]);
+        assert_valid_palette(&p, "oscuros");
+        // Colores ya legibles no se tocan.
+        let bright = [Rgb(0x60, 0xCD, 0xFF), Rgb(0xFF, 0x8A, 0x3D)];
+        assert_eq!(build_palette(&bright), bright.to_vec());
+    }
+
+    #[test]
+    fn every_theme_is_valid() {
+        let mut seen = Vec::new();
+        for t in THEMES.iter() {
+            assert!(!t.id_str().is_empty() && !t.name_str().is_empty());
+            assert_eq!(t.id_str(), t.id_str().to_ascii_lowercase(), "ids en minúsculas");
+            assert!(!t.id_str().contains(char::is_whitespace));
+            assert!(!seen.contains(&t.id_str()), "id repetido {}", t.id_str());
+            seen.push(t.id_str());
+            assert!(t.colors.iter().all(|&c| c <= 0x00FF_FFFF), "{}", t.id_str());
+            let p = t.palette();
+            assert_valid_palette(&p, t.id_str());
+            assert_ne!(p, FALLBACK.to_vec(), "el tema {} acaba en la paleta de respaldo", t.id_str());
+        }
+    }
+
+    #[test]
+    fn theme_index_lookup() {
+        for (i, t) in THEMES.iter().enumerate() {
+            assert_eq!(theme_index(t.id_str()), Some(i));
+            assert_eq!(theme_index(&t.id_str().to_ascii_uppercase()), Some(i));
+        }
+        assert_eq!(theme_index(""), None);
+        assert_eq!(theme_index("auto"), None);
+        assert_eq!(theme_index("random"), None);
+        assert_eq!(theme_index(" aero"), None);
+    }
+
+    #[test]
+    fn hsl_round_trip() {
+        for v in [0xFF0000u32, 0x00FF00, 0x0000FF, 0x0078D4, 0x8E44AD, 0x3DDC97, 0xFF8A3D, 0x808080, 0xFFFFFF, 0] {
+            let c = Rgb::hex(v);
+            let (h, s, l) = to_hsl(c);
+            assert!((0.0..360.0).contains(&h) && (0.0..=1.0).contains(&s) && (0.0..=1.0).contains(&l), "{v:06x}");
+            let back = from_hsl(h, s, l);
+            assert!(dist(c, back) <= 3, "{v:06x} -> {back:?}");
+        }
+    }
+
+    #[test]
+    fn accent_palette_uses_the_accent() {
+        // Acento ya legible: es el primer color tal cual.
+        for v in [0x60CDFFu32, 0xFF8A3D, 0x3DDC97, 0xFF7EB6, 0xE81123] {
+            let accent = Rgb::hex(v);
+            if luminance(accent) < 0.22 {
+                continue;
+            }
+            let p = accent_palette(accent);
+            assert_eq!(p[0], accent, "{v:06x}");
+            assert_valid_palette(&p, &format!("{v:06x}"));
+        }
+        // Acento oscuro (azul de Windows): primer color = acento aclarado, sigue siendo azul.
+        let p = accent_palette(Rgb::hex(0x0078D4));
+        assert_valid_palette(&p, "0078d4");
+        assert!(p[0].2 > p[0].0 && p[0].2 >= p[0].1, "{:?} ya no es azul", p[0]);
+        // Acentos distintos dan paletas distintas.
+        assert_ne!(accent_palette(Rgb::hex(0xE81123)), accent_palette(Rgb::hex(0x10893E)));
+    }
+
+    #[test]
+    fn accent_palette_special_cases() {
+        // Negro: Tokyo Night.
+        let tokyo = [0x7AA2F7, 0xBB9AF7, 0x7DCFFF, 0x9ECE6A].map(Rgb::hex);
+        for a in [BLACK, Rgb(10, 10, 12)] {
+            let p = accent_palette(a);
+            assert_valid_palette(&p, "negro");
+            assert_eq!(p[0], tokyo[0]);
+            assert!(p.iter().all(|c| tokyo.contains(c)), "{p:?}");
+        }
+        // Gris (Graphite): grises casi neutros.
+        let p = accent_palette(Rgb(0x8C, 0x8C, 0x8C));
+        assert_valid_palette(&p, "gris");
+        assert!(p.iter().all(|c| (c.0 as i32 - c.2 as i32).abs() < 40), "{p:?}");
+        // Blanco puro no rompe nada.
+        assert_valid_palette(&accent_palette(WHITE), "blanco");
+    }
+
+    #[test]
+    fn accent_palette_sweep_is_always_valid() {
+        for r in (0..=255).step_by(17) {
+            for g in (0..=255).step_by(51) {
+                for b in (0..=255).step_by(85) {
+                    let a = Rgb(r as u8, g as u8, b as u8);
+                    assert_valid_palette(&accent_palette(a), &format!("{a:?}"));
+                }
+            }
+        }
+    }
+}

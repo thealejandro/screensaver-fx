@@ -140,3 +140,258 @@ impl Config {
         cfg
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color::THEMES;
+
+    const ACCENT: Rgb = Rgb(0x00, 0x78, 0xD4);
+
+    fn p(ini: &str) -> Config {
+        Config::parse(ini, ACCENT, 42, true)
+    }
+
+    fn ids(cfg: &Config) -> Vec<&'static str> {
+        cfg.effects.iter().map(|&i| EFFECTS[i].id_str()).collect()
+    }
+
+    fn all() -> Vec<usize> {
+        (0..EFFECTS.len()).collect()
+    }
+
+    #[test]
+    fn empty_ini_gives_defaults() {
+        let c = p("");
+        assert_eq!(c.banner, Banner::Default);
+        assert_eq!(c.title, "");
+        assert_eq!(c.subtitle, "");
+        assert_eq!(c.theme, ThemeSel::Auto);
+        assert_eq!(c.size, Size::M);
+        assert_eq!(c.lang, Lang::Es);
+        assert_eq!(c.effects, all());
+        assert_eq!(c.accent, ACCENT);
+        assert_eq!(c.seed, 42);
+        assert!(c.art.is_none());
+    }
+
+    #[test]
+    fn system_language_is_the_default_lang() {
+        assert_eq!(Config::parse("", ACCENT, 0, true).lang, Lang::Es);
+        assert_eq!(Config::parse("", ACCENT, 0, false).lang, Lang::En);
+        // lang=auto o un valor desconocido no tocan el idioma del sistema.
+        assert_eq!(Config::parse("lang=auto", ACCENT, 0, false).lang, Lang::En);
+        assert_eq!(Config::parse("lang=fr", ACCENT, 0, true).lang, Lang::Es);
+    }
+
+    #[test]
+    fn lang_values() {
+        assert_eq!(Config::parse("lang=es", ACCENT, 0, false).lang, Lang::Es);
+        assert_eq!(Config::parse("lang=en", ACCENT, 0, true).lang, Lang::En);
+        assert_eq!(Config::parse("lang=ES", ACCENT, 0, false).lang, Lang::Es);
+        assert_eq!(Config::parse("LANG = En ", ACCENT, 0, true).lang, Lang::En);
+    }
+
+    #[test]
+    fn whitespace_only_or_comment_only_ini_gives_defaults() {
+        for ini in ["\n\n   \n\t\n", "# theme=aero\n; size=l\n[saver]\n", "sin igual\n=\n==\n"] {
+            let c = p(ini);
+            assert_eq!(c.theme, ThemeSel::Auto, "{ini:?}");
+            assert_eq!(c.size, Size::M, "{ini:?}");
+            assert_eq!(c.banner, Banner::Default, "{ini:?}");
+            assert_eq!(c.effects, all(), "{ini:?}");
+        }
+    }
+
+    #[test]
+    fn banner_values() {
+        assert_eq!(p("banner=text").banner, Banner::Text);
+        assert_eq!(p("banner=file").banner, Banner::File);
+        assert_eq!(p("banner=default").banner, Banner::Default);
+        assert_eq!(p("banner=TEXT").banner, Banner::Text);
+        assert_eq!(p("banner=xyz").banner, Banner::Default);
+        assert_eq!(p("banner=").banner, Banner::Default);
+        // Un valor inválido posterior vuelve al rótulo por defecto.
+        assert_eq!(p("banner=text\nbanner=???").banner, Banner::Default);
+    }
+
+    #[test]
+    fn title_and_subtitle_keep_case_and_inner_text() {
+        let c = p("title=  Hola Mundo  \nsubtitle=\tXaCode 2026 ");
+        assert_eq!(c.title, "Hola Mundo");
+        assert_eq!(c.subtitle, "XaCode 2026");
+        // Solo se parte en el primer '='; '#' y ';' dentro del valor no son comentarios.
+        let c = p("title=a=b # c ; d");
+        assert_eq!(c.title, "a=b # c ; d");
+        // Unicode.
+        let c = p("title=Ñandú\nsubtitle=日本語");
+        assert_eq!(c.title, "Ñandú");
+        assert_eq!(c.subtitle, "日本語");
+        // Vaciar explícitamente.
+        let c = p("title=X\ntitle=");
+        assert_eq!(c.title, "");
+    }
+
+    #[test]
+    fn title_length_is_not_limited_by_the_parser() {
+        // El recorte (MAX_TITLE/MAX_SUBTITLE) lo hace el rótulo, no la configuración.
+        let long = "W".repeat(500);
+        let c = p(&format!("title={long}\nsubtitle={long}"));
+        assert_eq!(c.title.len(), 500);
+        assert_eq!(c.subtitle.len(), 500);
+    }
+
+    #[test]
+    fn theme_values() {
+        assert_eq!(p("theme=auto").theme, ThemeSel::Auto);
+        assert_eq!(p("theme=system").theme, ThemeSel::Auto);
+        assert_eq!(p("theme=random").theme, ThemeSel::Random);
+        assert_eq!(p("theme=RANDOM").theme, ThemeSel::Random);
+        assert_eq!(p("theme=no-existe").theme, ThemeSel::Auto);
+        assert_eq!(p("theme=").theme, ThemeSel::Auto);
+        assert_eq!(p("theme=aero").theme, ThemeSel::Named(0));
+        assert_eq!(p("theme=Aero-Night").theme, ThemeSel::Named(1));
+        // Valor inválido después de uno válido: vuelve a auto.
+        assert_eq!(p("theme=aero\ntheme=zzz").theme, ThemeSel::Auto);
+    }
+
+    #[test]
+    fn every_theme_id_parses_to_its_index() {
+        for (i, t) in THEMES.iter().enumerate() {
+            assert_eq!(p(&format!("theme={}", t.id_str())).theme, ThemeSel::Named(i));
+            assert_eq!(p(&format!("theme={}", t.id_str().to_uppercase())).theme, ThemeSel::Named(i));
+            assert_eq!(p(&format!("  Theme =  {}  ", t.id_str())).theme, ThemeSel::Named(i));
+        }
+    }
+
+    #[test]
+    fn size_values() {
+        assert_eq!(p("size=s").size, Size::S);
+        assert_eq!(p("size=small").size, Size::S);
+        assert_eq!(p("size=S").size, Size::S);
+        assert_eq!(p("size=l").size, Size::L);
+        assert_eq!(p("size=large").size, Size::L);
+        assert_eq!(p("size=LARGE").size, Size::L);
+        assert_eq!(p("size=m").size, Size::M);
+        assert_eq!(p("size=xl").size, Size::M);
+        assert_eq!(p("size=").size, Size::M);
+        assert_eq!(p("size=l\nsize=42").size, Size::M);
+    }
+
+    #[test]
+    fn size_rows_are_ordered() {
+        // Más filas = rótulo más pequeño: S < M < L en tamaño visual.
+        assert!(Size::S.rows() > Size::M.rows());
+        assert!(Size::M.rows() > Size::L.rows());
+        assert!(Size::L.rows() > 0.0);
+    }
+
+    #[test]
+    fn effects_all_classic_modern() {
+        assert_eq!(p("effects=all").effects, all());
+        assert_eq!(p("effects=ALL").effects, all());
+        assert_eq!(p("effects=").effects, all());
+        let classic = p("effects=classic").effects;
+        let modern = p("effects=modern").effects;
+        assert_eq!(classic.len(), 6, "los seis efectos de Omarchy");
+        assert!(classic.iter().all(|&i| EFFECTS[i].classic));
+        assert!(modern.iter().all(|&i| !EFFECTS[i].classic));
+        assert_eq!(classic.len() + modern.len(), EFFECTS.len());
+        assert!(!modern.is_empty());
+    }
+
+    #[test]
+    fn effects_list() {
+        assert_eq!(ids(&p("effects=neon,plasma")), ["neon", "plasma"]);
+        assert_eq!(ids(&p("effects= Neon , PLASMA ,matrix ")), ["neon", "plasma", "matrix"]);
+        // Desconocidos y vacíos se ignoran.
+        assert_eq!(ids(&p("effects=neon,,nope, ,wipe")), ["neon", "wipe"]);
+        // Lista sin ningún efecto válido: se queda la selección anterior (nunca vacío).
+        assert_eq!(p("effects=nope,zzz").effects, all());
+        assert_eq!(ids(&p("effects=wipe\neffects=nope")), ["wipe"]);
+        assert_eq!(p("effects=,,,").effects, all());
+    }
+
+    #[test]
+    fn every_effect_id_parses() {
+        for (i, f) in EFFECTS.iter().enumerate() {
+            assert_eq!(p(&format!("effects={}", f.id_str())).effects, vec![i]);
+            assert_eq!(p(&format!("EFFECTS={}", f.id_str().to_uppercase())).effects, vec![i]);
+        }
+    }
+
+    #[test]
+    fn effects_never_empty_and_in_range() {
+        let inputs = ["effects=", "effects=,", "effects=classic,modern", "effects=all,neon", "effects=\u{feff}", "effects=neon;plasma", "effects=💥"];
+        for ini in inputs {
+            let c = p(ini);
+            assert!(!c.effects.is_empty(), "{ini:?}");
+            assert!(c.effects.iter().all(|&i| i < EFFECTS.len()), "{ini:?}");
+        }
+    }
+
+    #[test]
+    fn bom_crlf_case_and_spaces() {
+        let ini = "\u{feff}theme=obsidiana\r\n  SIZE  =  L  \r\nBanner=Text\r\nTitle = Hola\r\nlang=en\r\n";
+        let c = Config::parse(ini, ACCENT, 1, true);
+        assert_eq!(c.theme, ThemeSel::Named(2));
+        assert_eq!(c.size, Size::L);
+        assert_eq!(c.banner, Banner::Text);
+        assert_eq!(c.title, "Hola");
+        assert_eq!(c.lang, Lang::En);
+    }
+
+    #[test]
+    fn bom_before_comment_or_section() {
+        let c = p("\u{feff}# comentario\nsize=s");
+        assert_eq!(c.size, Size::S);
+        let c = p("\u{feff}[Screensaver FX]\nsize=l");
+        assert_eq!(c.size, Size::L);
+        let c = p("\u{feff}size=s");
+        assert_eq!(c.size, Size::S);
+    }
+
+    #[test]
+    fn comments_and_sections_are_skipped() {
+        let c = p("# theme=aero\n; theme=fluent\n[theme=tahoe]\n  # size=l\nsize=s");
+        assert_eq!(c.theme, ThemeSel::Auto);
+        assert_eq!(c.size, Size::S);
+    }
+
+    #[test]
+    fn unknown_keys_are_ignored_and_last_value_wins() {
+        let c = p("foo=bar\ncolor=red\nsize=l\nsize=s\ntheme=aero\ntheme=fluent");
+        assert_eq!(c.size, Size::S);
+        assert_eq!(c.theme, ThemeSel::Named(3));
+    }
+
+    #[test]
+    fn windows_settings_format_round_trip() {
+        // El formato que escribe windows/src/settings.rs.
+        let ini = "# Screensaver FX\nbanner=text\ntitle=JACC\nsubtitle=XACODE\ntheme=random\nsize=l\neffects=modern\nlang=en\n";
+        let c = Config::parse(ini, ACCENT, 9, true);
+        assert_eq!(c.banner, Banner::Text);
+        assert_eq!((c.title.as_str(), c.subtitle.as_str()), ("JACC", "XACODE"));
+        assert_eq!(c.theme, ThemeSel::Random);
+        assert_eq!(c.size, Size::L);
+        assert!(c.effects.iter().all(|&i| !EFFECTS[i].classic));
+        assert_eq!(c.lang, Lang::En);
+    }
+
+    #[test]
+    fn arbitrary_garbage_never_panics() {
+        let mut s = String::new();
+        for i in 0..2000u32 {
+            s.push(char::from_u32((i * 7919) % 0x3000).unwrap_or('?'));
+            if i % 37 == 0 {
+                s.push('=');
+            }
+            if i % 53 == 0 {
+                s.push('\n');
+            }
+        }
+        let c = p(&s);
+        assert!(!c.effects.is_empty());
+        assert!(c.effects.iter().all(|&i| i < EFFECTS.len()));
+    }
+}
