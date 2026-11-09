@@ -297,7 +297,7 @@ unsafe fn build_ini(hwnd: HWND) -> String {
 unsafe fn save(hwnd: HWND) -> bool {
     let ok = std::fs::create_dir_all(sys::data_dir()).is_ok() && std::fs::write(sys::ini_path(), build_ini(hwnd)).is_ok();
     let scr = UI.with(|u| u.borrow().as_ref().map(|u| u.scr.clone())).unwrap_or_default();
-    let ours = reg_get("SCRNSAVE.EXE").is_some_and(|c| c.eq_ignore_ascii_case(&scr));
+    let ours = reg_get("SCRNSAVE.EXE").is_some_and(|c| sys::same_path(&c, &scr));
     if active() {
         let mins = text_of(hwnd, ID_MINUTES).trim().parse::<u32>().unwrap_or(5).clamp(1, 999);
         reg_set("SCRNSAVE.EXE", &scr);
@@ -999,7 +999,7 @@ pub fn run(owner: Option<HWND>) {
         // Tarjeta inferior: usarlo como protector del sistema. A la izquierda el texto (que también
         // conmuta); a la derecha «tras N minutos» y el interruptor.
         let scr = scr_path();
-        let active = reg_get("ScreenSaveActive").as_deref() == Some("1") && reg_get("SCRNSAVE.EXE").is_some_and(|c| c.eq_ignore_ascii_case(&scr));
+        let active = reg_get("ScreenSaveActive").as_deref() == Some("1") && reg_get("SCRNSAVE.EXE").is_some_and(|c| sys::same_path(&c, &scr));
         ACTIVE.set(active);
         let mins = reg_get("ScreenSaveTimeOut").and_then(|v| v.parse::<u32>().ok()).map(|v| (v / 60).max(1)).unwrap_or(5);
         let act = tr("Usarlo como protector de pantalla", "Use it as my screensaver");

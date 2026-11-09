@@ -76,3 +76,19 @@ pub fn now() -> WallTime {
 pub fn seed() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x5EED) ^ std::process::id() as u64
 }
+
+/// Ruta larga (Windows guarda a veces el protector como C:\WINDOWS\system32\SCREEN~1.SCR).
+pub fn long_path(p: &str) -> String {
+    let w = wide(p);
+    let mut buf = vec![0u16; 1024];
+    let n = unsafe { windows_sys::Win32::Storage::FileSystem::GetLongPathNameW(w.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    if n == 0 || n >= buf.len() {
+        return p.to_string();
+    }
+    String::from_utf16_lossy(&buf[..n])
+}
+
+/// Mismo archivo, sin importar mayúsculas ni nombres cortos 8.3.
+pub fn same_path(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b) || long_path(a).eq_ignore_ascii_case(&long_path(b))
+}
