@@ -4,6 +4,7 @@
 //!   /s           pantalla completa en todos los monitores
 //!   /p <hwnd>    vista previa dentro de la ventana de Configuración
 //!   /c[:hwnd]    configuración (también sin argumentos)
+//!   /watch       vigilante en segundo plano (ver watch.rs); /unwatch lo detiene
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -13,6 +14,8 @@ mod saver;
 mod settings;
 #[cfg(windows)]
 mod sys;
+#[cfg(windows)]
+mod watch;
 
 #[cfg(not(windows))]
 fn main() {}
@@ -41,6 +44,8 @@ fn main() {
                 saver::run(Some(h), false)
             }
         }
+        "watch" => watch::run(),
+        "unwatch" => watch::stop(),
         "c" => settings::run(hwnd_arg()),
         _ => settings::run(None),
     }
