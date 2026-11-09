@@ -1,0 +1,67 @@
+# Screensaver FX
+
+Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las animaciones del screensaver de Omarchy y 10 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino. No usa ningún motor web y ocupa unos 5 MB de RAM.
+
+## Instalar
+
+### Windows 10/11
+
+- **Instalador:** descarga `ScreensaverFX-Setup.exe` de [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest). Permite personalizar el rótulo, los colores y los efectos con una vista previa en vivo.
+- **Terminal** (sin permisos de administrador):
+
+  ```powershell
+  irm https://raw.githubusercontent.com/thealejandro/screensaver-fx/main/install.ps1 | iex
+  ```
+
+  Para desinstalar: `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/thealejandro/screensaver-fx/main/install.ps1))) -Uninstall`
+
+El instalador no está firmado, así que SmartScreen puede avisar: «Más información» › «Ejecutar de todas formas».
+
+### macOS 11 o posterior
+
+- **Instalador:** descarga `ScreensaverFX.pkg` de [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest).
+- **Terminal:**
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/thealejandro/screensaver-fx/main/install.sh | bash
+  ```
+
+El paquete no está notarizado. Si macOS lo bloquea, ve a Ajustes del Sistema › Privacidad y seguridad › «Abrir igualmente». Con el método de la terminal no aparece el aviso.
+
+## Compilar
+
+### macOS
+
+Requisitos: [rustup](https://rustup.rs) y las Command Line Tools (`xcode-select --install`).
+
+```bash
+./macos/build.sh --install     # compila e instala en ~/Library/Screen Savers
+./macos/package.sh             # dist/ScreensaverFX-macOS.zip y dist/ScreensaverFX-<versión>.pkg
+```
+
+### Windows
+
+Requisitos: rustup con el toolchain `stable-x86_64-pc-windows-gnullvm`, [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) en el PATH e [Inno Setup 6.7+](https://jrsoftware.org/isinfo.php) para el instalador.
+
+```bash
+cargo build -p screensaver-fx --release
+cargo build -p screensaver-fx --release --target aarch64-pc-windows-gnullvm
+ISCC installer\windows\ScreensaverFX.iss          # dist\ScreensaverFX-Setup-<versión>.exe
+```
+
+Argumentos del `.scr`: `/s` pantalla completa, `/p <hwnd>` vista previa, `/c` configuración, `/w` ventana de prueba. La configuración vive en `%APPDATA%\ScreensaverFX\config.ini`.
+
+### Publicar una versión
+
+```bash
+git tag v0.1.0 && git push --tags
+```
+
+GitHub Actions compila Windows (x64 + ARM64) y macOS (universal) y sube los instaladores a Releases.
+
+## Herramientas
+
+```bash
+cargo run -p ssfx-core --example snap --release -- snaps auto 1920 1080 "banner=text|title=Hola"   # fotogramas a PNG
+cargo run -p ssfx-core --example brand --release -- installer/assets                              # icono e imágenes
+```
