@@ -136,7 +136,13 @@ Source: "{#X64Bin}"; DestName: "ssfx-x64.exe"; Flags: dontcopy
 Name: "{autoprograms}\{cm:IconSettings}"; Filename: "{app}\ScreensaverFX.exe"; Parameters: "/c"
 Name: "{autoprograms}\{cm:IconTest}"; Filename: "{app}\ScreensaverFX.exe"; Parameters: "/s"
 
+[Registry]
+; Vigilante: lanza el protector configurado aunque una app en primer plano lo bloquee.
+; Para todos los usuarios en HKLM; solo para ti en HKCU.
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ScreensaverFX"; ValueData: """{app}\ScreensaverFX.exe"" /watch"; Flags: uninsdeletevalue
+
 [Run]
+Filename: "{app}\ScreensaverFX.exe"; Parameters: "/watch"; Flags: nowait runasoriginaluser
 Filename: "{app}\ScreensaverFX.exe"; Parameters: "/s"; Description: "{cm:RunTest}"; Flags: postinstall nowait skipifsilent unchecked
 Filename: "control.exe"; Parameters: "desk.cpl,,@screensaver"; Description: "{cm:RunSettings}"; Flags: postinstall nowait skipifsilent unchecked shellexec
 
@@ -147,6 +153,7 @@ const
   SPIF_UPDATE = 3; { SPIF_UPDATEINIFILE or SPIF_SENDCHANGE }
   DESKTOP_KEY = 'Control Panel\Desktop';
   PREVIEW_DELAY = 350;
+  EVENT_MODIFY_STATE = 2;
 
 type
   TTimerProc = procedure(H: LongWord; Msg: LongWord; IdEvent: LongWord; Time: LongWord);
@@ -172,6 +179,12 @@ function SetTimer(hWnd, nIDEvent, uElapse, lpTimerFunc: LongWord): LongWord;
   external 'SetTimer@user32.dll stdcall';
 function KillTimer(hWnd, uIDEvent: LongWord): BOOL;
   external 'KillTimer@user32.dll stdcall';
+function OpenEvent(dwDesiredAccess: LongWord; bInheritHandle: BOOL; lpName: String): LongWord;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(hEvent: LongWord): BOOL;
+  external 'SetEvent@kernel32.dll stdcall';
+function CloseHandle(hObject: LongWord): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
 
 function UseX64: Boolean;
 begin
@@ -562,6 +575,27 @@ begin
   end;
 end;
 
+{ Detiene el vigilante de esta sesión (evento que espera, ver windows/src/watch.rs) para poder
+  reemplazar o borrar el ejecutable. No ejecuta el .exe instalado: uno antiguo no conoce /unwatch. }
+procedure StopWatcher;
+var
+  H: LongWord;
+begin
+  H := OpenEvent(EVENT_MODIFY_STATE, False, 'Local\ScreensaverFX.Watch.Quit');
+  if H <> 0 then
+  begin
+    SetEvent(H);
+    CloseHandle(H);
+    Sleep(500);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  StopWatcher;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Mins: Integer;
@@ -594,6 +628,7 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    StopWatcher;
     if RegQueryStringValue(HKCU, DESKTOP_KEY, 'SCRNSAVE.EXE', Cur) and
        (Pos('screensaverfx', Lowercase(Cur)) > 0) then
     begin
