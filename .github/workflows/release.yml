@@ -44,9 +44,9 @@ jobs:
       - name: Inno Setup
         shell: pwsh
         run: |
-          Invoke-WebRequest https://jrsoftware.org/download.php/is.exe -OutFile "$env:RUNNER_TEMP\is.exe"
-          Start-Process "$env:RUNNER_TEMP\is.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', "/DIR=$env:RUNNER_TEMP\inno" -Wait
-          & "$env:RUNNER_TEMP\inno\ISCC.exe" /Q "/DAppVersion=$env:VERSION" `
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc /Q "/DAppVersion=$env:VERSION" `
             "/DX64Bin=$PWD\target\x86_64-pc-windows-gnullvm\release\ScreensaverFX.exe" `
             "/DArm64Bin=$PWD\target\aarch64-pc-windows-gnullvm\release\ScreensaverFX.exe" `
             installer\windows\ScreensaverFX.iss

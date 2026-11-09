@@ -15,7 +15,8 @@ ditto -c -k --sequesterRsrc --keepParent "$SAVER" dist/ScreensaverFX-macOS.zip
 # Instalador .pkg con imagen de marca, bienvenida y cierre en español e inglés.
 cp -R "$SAVER" "$WORK/root/"
 pkgbuild --analyze --root "$WORK/root" "$WORK/component.plist"
-/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$WORK/component.plist"
+# Si pkgbuild detecta el .saver como bundle, que no lo reubique; si no, no hay nada que cambiar.
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$WORK/component.plist" 2>/dev/null || true
 chmod +x installer/macos/scripts/postinstall
 pkgbuild --root "$WORK/root" --component-plist "$WORK/component.plist" \
   --identifier dev.thealejandro.ScreensaverFX --version "$VER" \
