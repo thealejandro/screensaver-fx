@@ -1,6 +1,6 @@
 [package]
 name = "screensaver-fx"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 build = "build.rs"
@@ -33,4 +33,8 @@ features = [
   "Win32_System_Memory",
   "Win32_System_Power",
   "Win32_System_Shutdown",
+  "Win32_Networking_WinHttp",
+  "Win32_Security_Cryptography",
+  "Win32_System_RemoteDesktop",
+  "Win32_Storage_FileSystem",
 ]

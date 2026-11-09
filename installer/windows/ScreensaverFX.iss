@@ -4,7 +4,7 @@
 ; Las imágenes y el icono los genera: cargo run -p ssfx-core --example brand --release
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #ifndef X64Bin
   #define X64Bin "..\..\target\release\ScreensaverFX.exe"
@@ -141,8 +141,11 @@ Name: "{autoprograms}\{cm:IconTest}"; Filename: "{app}\ScreensaverFX.exe"; Param
 ; Para todos los usuarios en HKLM; solo para ti en HKCU.
 Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ScreensaverFX"; ValueData: """{app}\ScreensaverFX.exe"" /watch"; Flags: uninsdeletevalue
 
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\update"
+
 [Run]
-Filename: "{app}\ScreensaverFX.exe"; Parameters: "/watch"; Flags: nowait runasoriginaluser
+Filename: "{app}\ScreensaverFX.exe"; Parameters: "/watch"; Flags: nowait runasoriginaluser; Check: StartWatcher
 Filename: "{app}\ScreensaverFX.exe"; Parameters: "/s"; Description: "{cm:RunTest}"; Flags: postinstall nowait skipifsilent unchecked
 Filename: "control.exe"; Parameters: "desk.cpl,,@screensaver"; Description: "{cm:RunSettings}"; Flags: postinstall nowait skipifsilent unchecked shellexec
 
@@ -173,6 +176,35 @@ var
 
 function SystemParametersInfo(uiAction, uiParam, pvParam, fWinIni: LongWord): BOOL;
   external 'SystemParametersInfoW@user32.dll stdcall';
+
+{ /AUTOUPDATE: lo pasa el actualizador (windows/src/update.rs). No toca la configuración ni el
+  protector elegido, y como SYSTEM no lanza el vigilante (lo relanza el actualizador en cada sesión). }
+function IsAutoUpdate: Boolean;
+begin
+  Result := Pos('/AUTOUPDATE', Uppercase(GetCmdTail)) > 0;
+end;
+
+function StartWatcher: Boolean;
+begin
+  Result := not (IsAutoUpdate and IsAdminInstallMode);
+end;
+
+function GetLongPathName(lpszShortPath: String; lpszLongPath: String; cchBuffer: Cardinal): Cardinal;
+  external 'GetLongPathNameW@kernel32.dll stdcall';
+
+{ Ruta larga: Windows guarda a veces el protector como C:\WINDOWS\system32\SCREEN~1.SCR. }
+function LongPath(const S: String): String;
+var
+  N: Cardinal;
+begin
+  Result := StringOfChar(' ', 1024);
+  N := GetLongPathName(S, Result, 1024);
+  if (N = 0) or (N >= 1024) then
+    Result := S
+  else
+    SetLength(Result, N);
+end;
+
 function SetEnvironmentVariable(lpName, lpValue: String): BOOL;
   external 'SetEnvironmentVariableW@kernel32.dll stdcall';
 function SetTimer(hWnd, nIDEvent, uElapse, lpTimerFunc: LongWord): LongWord;
@@ -538,7 +570,7 @@ begin
   LoadConfig;
   CreateCustomizePage;
   { /NOACTIVATE: instala sin cambiar el protector de pantalla actual (útil con /VERYSILENT). }
-  if Pos('/NOACTIVATE', Uppercase(GetCmdTail)) > 0 then
+  if (Pos('/NOACTIVATE', Uppercase(GetCmdTail)) > 0) or IsAutoUpdate then
     ActivateCheck.Checked := False;
   try
     if UseX64 then
@@ -596,11 +628,52 @@ begin
   StopWatcher;
 end;
 
+{ Para todos: tarea programada que busca actualizaciones como SYSTEM al arrancar y una vez al día. }
+procedure RegisterUpdateTask;
+var
+  Lines: TArrayOfString;
+  F: String;
+  Code: Integer;
+begin
+  F := ExpandConstant('{tmp}\update-task.xml');
+  SetArrayLength(Lines, 1);
+  Lines[0] :=
+    '<?xml version="1.0" encoding="UTF-8"?>' + #13#10 +
+    '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">' + #13#10 +
+    '  <RegistrationInfo><Description>Busca e instala actualizaciones de Screensaver FX.</Description></RegistrationInfo>' + #13#10 +
+    '  <Triggers>' + #13#10 +
+    '    <BootTrigger><Delay>PT10M</Delay></BootTrigger>' + #13#10 +
+    '    <CalendarTrigger><StartBoundary>2026-01-01T12:00:00</StartBoundary><RandomDelay>PT2H</RandomDelay>' +
+    '<ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay></CalendarTrigger>' + #13#10 +
+    '  </Triggers>' + #13#10 +
+    '  <Principals><Principal id="System"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals>' + #13#10 +
+    '  <Settings>' + #13#10 +
+    '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>' + #13#10 +
+    '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>' + #13#10 +
+    '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>' + #13#10 +
+    '    <StartWhenAvailable>true</StartWhenAvailable>' + #13#10 +
+    '    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>' + #13#10 +
+    '    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>' + #13#10 +
+    '    <Priority>7</Priority>' + #13#10 +
+    '  </Settings>' + #13#10 +
+    '  <Actions Context="System"><Exec><Command>"' + ExpandConstant('{app}\ScreensaverFX.exe') + '"</Command>' +
+    '<Arguments>/update</Arguments></Exec></Actions>' + #13#10 +
+    '</Task>';
+  SaveStringsToUTF8File(F, Lines, False);
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/Create /F /TN "ScreensaverFX\Update" /XML "' + F + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  if Code <> 0 then
+    Log(Format('schtasks /Create terminó con %d', [Code]));
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Mins: Integer;
 begin
   if CurStep <> ssPostInstall then
+    Exit;
+  if IsAdminInstallMode then
+    RegisterUpdateTask;
+  if IsAutoUpdate then
     Exit;
   ForceDirectories(DataDir);
   SaveStringsToUTF8File(DataDir + '\config.ini', BuildIni, False);
@@ -647,10 +720,15 @@ begin
   Other := OtherInstallDir;
   if CurUninstallStep = usUninstall then
   begin
+    if IsAdminInstallMode then
+      Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /F /TN "ScreensaverFX\Update"', '', SW_HIDE, ewWaitUntilTerminated, Code);
     StopWatcher;
     { Solo si apunta a este protector: no desactiva el de la otra instalación. }
-    if RegQueryStringValue(HKCU, DESKTOP_KEY, 'SCRNSAVE.EXE', Cur) and
-       ((CompareText(Cur, ExpandConstant('{app}\ScreensaverFX.scr')) = 0) or
+    if RegQueryStringValue(HKCU, DESKTOP_KEY, 'SCRNSAVE.EXE', Cur) then
+      Cur := LongPath(Cur);
+    if (Cur <> '') and
+       ((CompareText(Cur, LongPath(ExpandConstant('{app}\ScreensaverFX.scr'))) = 0) or
+        (IsAdminInstallMode and (CompareText(Cur, LongPath(ExpandConstant('{sys}\ScreensaverFX.scr'))) = 0)) or
         ((Other = '') and (Pos('screensaverfx', Lowercase(Cur)) > 0))) then
     begin
       RegDeleteValue(HKCU, DESKTOP_KEY, 'SCRNSAVE.EXE');

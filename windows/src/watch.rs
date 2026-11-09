@@ -134,7 +134,7 @@ fn grace_ms() -> u32 {
 }
 
 /// Registro breve en %APPDATA%\ScreensaverFX\watch.log (rota a los 64 KB) para diagnosticar.
-fn log(msg: &str) {
+pub fn log(msg: &str) {
     use std::io::Write;
     let dir = crate::sys::data_dir();
     let path = dir.join("watch.log");
@@ -219,6 +219,23 @@ pub fn run() {
             return;
         }
         ResetEvent(quit); // por si quedó señalado de un /unwatch anterior
+        if crate::update::all_users_install() {
+            // La tarea de actualización (SYSTEM, otra sesión) no ve los nombres Local\: este
+            // evento global le permite pedirnos salir antes de reemplazar el ejecutable.
+            let g = wide(&crate::update::global_quit_name(crate::update::current_session()));
+            let global = CreateEventW(core::ptr::null(), TRUE, FALSE, g.as_ptr());
+            if !global.is_null() {
+                ResetEvent(global);
+                let (g, q) = (global as usize, quit as usize);
+                let _ = std::thread::Builder::new().stack_size(64 * 1024).spawn(move || {
+                    if WaitForSingleObject(g as HANDLE, INFINITE) == WAIT_OBJECT_0 {
+                        log("actualización en curso: el vigilante se reinicia");
+                        SetEvent(q as HANDLE);
+                    }
+                });
+            }
+        }
+        crate::update::spawn_background(log);
         log(&format!("vigilante iniciado ({})", std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default()));
         // Devuelve al sistema lo que haya tocado el arranque: se queda en unos cientos de KB.
         SetProcessWorkingSetSizeEx(GetCurrentProcess(), usize::MAX, usize::MAX, 0);
@@ -271,6 +288,11 @@ pub fn run() {
             }
         }
     }
+}
+
+/// Devuelve al sistema la memoria que ya no se usa (tras lanzar el protector o descargar).
+pub fn trim() {
+    unsafe { SetProcessWorkingSetSizeEx(GetCurrentProcess(), usize::MAX, usize::MAX, 0) };
 }
 
 /// Pide al vigilante de esta sesión que termine.

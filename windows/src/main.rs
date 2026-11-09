@@ -5,6 +5,7 @@
 //!   /p <hwnd>    vista previa dentro de la ventana de Configuración
 //!   /c[:hwnd]    configuración (también sin argumentos)
 //!   /watch       vigilante en segundo plano (ver watch.rs); /unwatch lo detiene
+//!   /update      busca e instala una versión nueva (ver update.rs)
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -16,6 +17,8 @@ mod settings;
 mod sys;
 #[cfg(windows)]
 mod watch;
+#[cfg(windows)]
+mod update;
 
 #[cfg(not(windows))]
 fn main() {}
@@ -36,7 +39,11 @@ fn main() {
     let hwnd_arg = || -> Option<HWND> {
         inline.clone().or_else(|| args.get(1).cloned()).and_then(|s| s.trim().parse::<usize>().ok()).filter(|&v| v != 0).map(|v| v as HWND)
     };
-    match flag.trim_start_matches(['/', '-']) {
+    let mode = flag.trim_start_matches(['/', '-']).to_string();
+    if !matches!(mode.as_str(), "watch" | "unwatch" | "update") {
+        update::hold_busy();
+    }
+    match mode.as_str() {
         "s" => saver::run(None, false),
         "w" => saver::run(None, true),
         "p" | "l" => {
@@ -46,6 +53,7 @@ fn main() {
         }
         "watch" => watch::run(),
         "unwatch" => watch::stop(),
+        "update" => update::run_cli(),
         "c" => settings::run(hwnd_arg()),
         _ => settings::run(None),
     }
