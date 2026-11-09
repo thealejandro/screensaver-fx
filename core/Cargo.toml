@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 description = "Motor de animaciones de Screensaver FX (rejilla de celdas, sin dependencias de plataforma)"
 license = "MIT"
+# examples/png.rs es un módulo auxiliar (sin main) que incluyen snap y brand: no es un ejemplo
+# y, si cargo lo autodetecta, `cargo test` falla al compilarlo.
+autoexamples = false
+
+[[example]]
+name = "snap"
+
+[[example]]
+name = "brand"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
