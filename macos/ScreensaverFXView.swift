@@ -118,6 +118,21 @@ final class ScreensaverFXView: ScreenSaverView {
                           space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: info, provider: provider,
                           decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         imageLayer.contents = img
+        attachImageLayer()
+    }
+
+    /// La capa del view puede crearse o sustituirse al entrar en la ventana (después de init):
+    /// asegura que la imagen cuelga de la capa actual.
+    private func attachImageLayer() {
+        guard let root = layer, imageLayer.superlayer !== root else { return }
+        imageLayer.removeFromSuperlayer()
+        root.backgroundColor = NSColor.black.cgColor
+        root.addSublayer(imageLayer)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        attachImageLayer()
     }
 
     override func startAnimation() {

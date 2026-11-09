@@ -17,10 +17,21 @@ guard let bundle = Bundle(path: path), bundle.load(), let cls = bundle.principal
 }
 check("bundle cargado (\(bundle.bundleIdentifier ?? "?"))", true)
 
-/// Píxeles no negros de la imagen que muestra la vista.
+/// Primera imagen que muestra la vista (en cualquier capa), o nil.
+func shownImage(_ layer: CALayer?) -> CGImage? {
+    guard let layer = layer else { return nil }
+    if let c = layer.contents, CFGetTypeID(c as CFTypeRef) == CGImage.typeID { return (c as! CGImage) }
+    for s in layer.sublayers ?? [] { if let i = shownImage(s) { return i } }
+    return nil
+}
+
+/// Píxeles no negros de la imagen que muestra la vista (-1 si no muestra ninguna).
 func litPixels(_ view: NSView) -> Int {
-    guard let c = view.layer?.sublayers?.first?.contents, CFGetTypeID(c as CFTypeRef) == CGImage.typeID else { return -1 }
-    let img = c as! CGImage
+    guard let img = shownImage(view.layer) else {
+        let subs = (view.layer?.sublayers ?? []).map { l in l.contents.map { "\(type(of: $0))" } ?? "vacía" }
+        print("  INFO  capa: \(view.layer == nil ? "ninguna" : "subcapas \(subs)")")
+        return -1
+    }
     let (w, h) = (img.width, img.height)
     var buf = [UInt32](repeating: 0, count: w * h)
     let ctx = CGContext(data: &buf, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
