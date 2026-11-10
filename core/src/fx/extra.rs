@@ -1,4 +1,4 @@
-//! Más efectos de una pantalla: remolino, gota, luciérnagas y aurora.
+//! Más efectos de una pantalla: remolino, gota, luciérnagas, aurora, láser, ecualizador y mosaico.
 
 use super::{clamp01, ease_in_out_cubic, ease_out_cubic, flash, settle, shine, Ctx, Effect};
 use crate::color::{gradient, mix, scale, Rgb, WHITE};
@@ -265,6 +265,219 @@ impl Effect for Aurora {
             let (v, tint) = (self.veil(tx as i32, ty, rows), self.cols.get(tx as usize).map_or(WHITE, |p| p.2));
             let col = mix(settle(&c.pal, &c.art, x, y, t), tint, v * 0.3);
             c.g.put(tx as i32, ty as i32, ch, shine(scale(col, k), &c.art, x, y, t, 9.0, 10.8));
+        }
+    }
+}
+
+// ── Láser ───────────────────────────────────────────────────────────────────
+
+const ENGRAVE_START: f32 = 0.8;
+const ENGRAVE_DUR: f32 = 6.0;
+const SPARKS: u32 = 8;
+
+/// Un rayo baja desde lo alto de la pantalla y graba el rótulo fila a fila, soltando chispas.
+struct Laser {
+    /// Momento en que se graba cada letra.
+    at: Vec<f32>,
+    /// Letras en el orden en que se graban.
+    order: Vec<usize>,
+}
+
+pub fn laser(c: &mut Ctx) -> Box<dyn Effect> {
+    // Fila a fila y en zigzag, como una grabadora.
+    let mut order: Vec<usize> = (0..c.art.cells.len()).collect();
+    order.sort_by_key(|&i| {
+        let (x, y, _) = c.art.cells[i];
+        (y, if y % 2 == 0 { x } else { -x })
+    });
+    let n = order.len().max(1) as f32;
+    let mut at = vec![0.0; order.len()];
+    for (k, &i) in order.iter().enumerate() {
+        at[i] = ENGRAVE_START + ENGRAVE_DUR * k as f32 / n;
+    }
+    Box::new(Laser { at, order })
+}
+
+impl Effect for Laser {
+    fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
+        // Antes de grabarse, las letras se intuyen muy tenues, como el boceto en la plancha.
+        let guide = clamp01((t - 0.2) / 0.6) * 0.12;
+        for (i, &(x, y, ch)) in c.art.cells.iter().enumerate() {
+            let base = settle(&c.pal, &c.art, x, y, t);
+            let since = t - self.at[i];
+            let col = if since >= 0.0 {
+                // Recién grabada está al rojo blanco y se enfría hasta su color.
+                shine(flash(base, since, 0.9), &c.art, x, y, t, 8.6, 10.4)
+            } else {
+                scale(base, guide)
+            };
+            c.g.put(c.x0 + x, c.y0 + y, ch, col);
+        }
+        let p = (t - ENGRAVE_START) / ENGRAVE_DUR;
+        if !(0.0..1.0).contains(&p) || self.order.is_empty() {
+            return;
+        }
+        // Rayo desde el emisor, arriba al centro, hasta la letra que se graba ahora.
+        let i = self.order[((p * self.order.len() as f32) as usize).min(self.order.len() - 1)];
+        let (x, y, _) = c.art.cells[i];
+        let (tx, ty) = target(c, x, y);
+        let (ex, ey) = (c.g.cols as f32 / 2.0, -1.0);
+        let (dx, dy) = (tx - ex, ty - ey);
+        let ch = if dx.abs() < dy.abs() * 0.5 {
+            '│'
+        } else if dy.abs() * 2.0 < dx.abs() * 0.5 {
+            '─'
+        } else if dx > 0.0 {
+            '\\'
+        } else {
+            '/'
+        };
+        let beam = mix(gradient(&c.pal, 0.8), WHITE, 0.65);
+        let steps = dx.abs().max(dy.abs()).ceil().max(1.0) as i32;
+        for s in 0..steps {
+            let k = s as f32 / steps as f32;
+            c.g.put((ex + dx * k).round() as i32, (ey + dy * k).round() as i32, ch, scale(beam, 0.6 + 0.4 * k));
+        }
+        c.g.put(tx as i32, ty as i32, '█', WHITE);
+        for k in 0..SPARKS {
+            // Cada chispa nace en el punto de grabado, sale despedida hacia un lado y cae.
+            let life = t * 2.5 + k as f32 / SPARKS as f32;
+            let (age, gen) = (life.fract(), life.floor() as u32);
+            let vx = (crate::rng::hf(k, gen, 7) - 0.5) * 12.0;
+            let (sx, sy) = (tx + vx * age, ty - 1.5 * age + 4.0 * age * age);
+            let col = scale(mix(WHITE, gradient(&c.pal, 0.9), age), 1.0 - age * 0.7);
+            c.g.put(sx.round() as i32, sy.round() as i32, if age < 0.35 { '*' } else { '·' }, col);
+        }
+    }
+}
+
+// ── Ecualizador ─────────────────────────────────────────────────────────────
+
+const EQ_BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+const EQ_LOCK: f32 = 5.0;
+const EQ_SWEEP: f32 = 2.0;
+
+/// Barras de ecualizador que saltan al ritmo y, de izquierda a derecha, bajan y dejan el rótulo.
+struct Equalizer {
+    /// (frecuencia, fase) de cada columna del rótulo.
+    p: Vec<(f32, f32)>,
+}
+
+pub fn equalizer(c: &mut Ctx) -> Box<dyn Effect> {
+    let p = (0..c.art.w.max(1)).map(|_| (c.rng.range(3.0, 7.0), c.rng.range(0.0, TAU))).collect();
+    Box::new(Equalizer { p })
+}
+
+impl Equalizer {
+    /// Altura (en filas, con fracción) de la barra de la columna `x`, entre 0 y `max`.
+    fn level(&self, x: i32, t: f32, max: f32) -> f32 {
+        let (f, ph) = self.p[x as usize];
+        // Un golpe de bombo común a todas y una parte propia de cada columna.
+        let beat = (1.0 - (t * 2.2).fract()).powi(2);
+        let own = 0.5 + 0.5 * (t * f + ph).sin();
+        max * (0.12 + 0.88 * clamp01(0.6 * own + 0.4 * beat))
+    }
+
+    fn lock(x: i32, w: f32) -> f32 {
+        EQ_LOCK + EQ_SWEEP * x as f32 / w
+    }
+}
+
+impl Effect for Equalizer {
+    fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
+        let (w, h) = (c.art.w.max(1) as f32, c.art.h.max(1) as f32);
+        let fade = clamp01(t / 0.6);
+        let bottom = c.y0 + c.art.h - 1;
+        let max = h + 4.0;
+        for x in 0..c.art.w {
+            let lock = Self::lock(x, w);
+            // Barras de dos columnas con un hueco entre ellas.
+            if t >= lock || x % 3 == 2 {
+                continue;
+            }
+            // Al acercarse su momento, la barra se encoge hasta desaparecer.
+            let lv = self.level(x, t, max) * (1.0 - smooth((t - (lock - 0.8)) / 0.8));
+            let full = lv as i32;
+            for k in 0..=full {
+                let part = if k < full { 1.0 } else { lv.fract() };
+                if part < 0.07 {
+                    continue;
+                }
+                let ch = EQ_BARS[((part * 8.0) as usize).min(7)];
+                let col = gradient(&c.pal, k as f32 / max);
+                c.g.put(c.x0 + x, bottom - k, ch, scale(col, (0.45 + 0.55 * k as f32 / max) * fade));
+            }
+        }
+        for &(x, y, ch) in &c.art.cells {
+            let lock = Self::lock(x, w);
+            // Las letras crecen desde abajo, como la barra que se va.
+            let rise = clamp01((t - (lock - 0.25)) / 0.35);
+            if rise <= 0.0 || (h - 1.0 - y as f32) / h > rise {
+                continue;
+            }
+            let col = shine(flash(settle(&c.pal, &c.art, x, y, t), t - lock, 0.5), &c.art, x, y, t, 9.0, 10.8);
+            c.g.put(c.x0 + x, c.y0 + y, ch, col);
+        }
+    }
+}
+
+// ── Mosaico ─────────────────────────────────────────────────────────────────
+
+/// Alto de los bloques en cada paso (de ancho, el doble, para que se vean cuadrados).
+const TILES: [i32; 6] = [8, 6, 4, 3, 2, 1];
+const TILE_START: f32 = 0.4;
+const TILE_STEP: f32 = 0.9;
+
+/// El rótulo aparece como un mosaico de bloques grandes que se van afinando hasta las letras.
+struct Mosaic {
+    /// Celdas del rótulo con letra (w x h).
+    mask: Vec<bool>,
+}
+
+pub fn mosaic(c: &mut Ctx) -> Box<dyn Effect> {
+    let w = c.art.w.max(0) as usize;
+    let mut mask = vec![false; w * c.art.h.max(0) as usize];
+    for &(x, y, _) in &c.art.cells {
+        mask[y as usize * w + x as usize] = true;
+    }
+    Box::new(Mosaic { mask })
+}
+
+impl Effect for Mosaic {
+    fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
+        if t < TILE_START {
+            return;
+        }
+        let step = ((t - TILE_START) / TILE_STEP) as usize;
+        if step + 1 >= TILES.len() {
+            // Último paso: las letras de verdad.
+            let since = t - (TILE_START + TILE_STEP * (TILES.len() - 1) as f32);
+            for &(x, y, ch) in &c.art.cells {
+                let col = shine(flash(settle(&c.pal, &c.art, x, y, t), since, 0.5), &c.art, x, y, t, 8.5, 10.3);
+                c.g.put(c.x0 + x, c.y0 + y, ch, col);
+            }
+            return;
+        }
+        let (bh, bw) = (TILES[step], TILES[step] * 2);
+        // Cada paso entra con un golpe de brillo que se apaga enseguida.
+        let pulse = 1.0 - clamp01((t - TILE_START - TILE_STEP * step as f32) / 0.35) * 0.3;
+        let (w, h) = (c.art.w, c.art.h);
+        for by in (0..h).step_by(bh as usize) {
+            for bx in (0..w).step_by(bw as usize) {
+                let (x1, y1) = ((bx + bw).min(w), (by + bh).min(h));
+                let on: i32 = (by..y1).map(|y| (bx..x1).filter(|&x| self.mask[(y * w + x) as usize]).count() as i32).sum();
+                let cover = on as f32 / ((x1 - bx) * (y1 - by)) as f32;
+                if cover <= 0.3 {
+                    continue;
+                }
+                let ch = if cover > 0.6 { '█' } else { '▓' };
+                let col = scale(settle(&c.pal, &c.art, (bx + x1) / 2, (by + y1) / 2, t), pulse * (0.55 + 0.45 * cover));
+                for y in by..y1 {
+                    for x in bx..x1 {
+                        c.g.put(c.x0 + x, c.y0 + y, ch, col);
+                    }
+                }
+            }
         }
     }
 }
