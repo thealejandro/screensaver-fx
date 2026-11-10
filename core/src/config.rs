@@ -55,6 +55,18 @@ pub enum Banner {
     File,
 }
 
+/// Cómo se reparten las animaciones con varios monitores (`screens=` en config.ini).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Screens {
+    /// `span`: un solo escritorio, sincronizado; los efectos de escritorio pasan de una pantalla
+    /// a la siguiente según su posición (Configuración › Pantalla en Windows).
+    Span,
+    /// `each`: cada pantalla por su cuenta, con su propio orden de efectos.
+    Each,
+    /// `main`: solo la pantalla principal; las demás quedan en negro.
+    Main,
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub banner: Banner,
@@ -70,6 +82,7 @@ pub struct Config {
     pub seed: u64,
     /// Rótulo propio (contenido de screensaver.txt), si hay.
     pub art: Option<String>,
+    pub screens: Screens,
 }
 
 impl Config {
@@ -85,6 +98,7 @@ impl Config {
             accent,
             seed,
             art: None,
+            screens: Screens::Span,
         };
         for line in ini.lines() {
             let line = line.trim().trim_start_matches('\u{feff}');
@@ -132,6 +146,13 @@ impl Config {
                     };
                     if !set.is_empty() {
                         cfg.effects = set;
+                    }
+                }
+                "screens" => {
+                    cfg.screens = match v.as_str() {
+                        "each" => Screens::Each,
+                        "main" => Screens::Main,
+                        _ => Screens::Span,
                     }
                 }
                 _ => {}
@@ -339,6 +360,16 @@ mod tests {
         assert_eq!(c.banner, Banner::Text);
         assert_eq!(c.title, "Hola");
         assert_eq!(c.lang, Lang::En);
+    }
+
+    #[test]
+    fn screens_option() {
+        let s = |ini: &str| Config::parse(ini, ACCENT, 1, true).screens;
+        assert_eq!(s(""), Screens::Span);
+        assert_eq!(s("screens=MAIN"), Screens::Main);
+        assert_eq!(s("screens = each "), Screens::Each);
+        assert_eq!(s("screens=span"), Screens::Span);
+        assert_eq!(s("screens=quién sabe"), Screens::Span);
     }
 
     #[test]

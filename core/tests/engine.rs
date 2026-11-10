@@ -658,3 +658,61 @@ fn desk_with_bad_screens_still_runs() {
         }
     }
 }
+
+#[test]
+fn screens_main_leaves_the_others_black() {
+    let screens = three_screens();
+    let mut main = Engine::with_desk(&screens, 0, cfg("effects=all\nscreens=main", 4));
+    let mut others: Vec<Engine> = (1..3).map(|me| Engine::with_desk(&screens, me, cfg("effects=all\nscreens=main", 4))).collect();
+    let (mut t, mut drawn) = (0.0, 0);
+    while t < 60.0 {
+        t += 1.0 / 30.0;
+        drawn += main.tick(t, NOW) as i32;
+        for e in &mut others {
+            assert!(!e.tick(t, NOW), "t={t}: una pantalla secundaria dibujó");
+            assert!(e.pixels().iter().all(|&p| p == 0) && e.current_effect().is_none());
+        }
+    }
+    assert!(drawn > 100, "la principal casi no dibujó ({drawn})");
+}
+
+#[test]
+fn screens_each_runs_its_own_sequence_on_its_own_screen() {
+    let screens = three_screens();
+    let each: Vec<Engine> = (0..3).map(|me| Engine::with_desk(&screens, me, cfg("effects=all\nscreens=each", 4))).collect();
+    let alone: Vec<Engine> = (0..3).map(|me| Engine::with_desk(&screens[me..=me], 0, cfg("effects=all", 4))).collect();
+    // Cada motor usa solo su pantalla: la misma rejilla que si estuviera sola.
+    for (a, b) in each.iter().zip(&alone) {
+        assert_eq!(a.layout(), b.layout());
+    }
+    let mut es = each;
+    let mut seqs = vec![Vec::new(); 3];
+    let mut t = 0.0;
+    while t < 400.0 {
+        t += 1.0 / 20.0;
+        for (e, s) in es.iter_mut().zip(&mut seqs) {
+            e.tick(t, NOW);
+            if let Some(f) = e.current_effect() {
+                if s.last() != Some(&f) {
+                    s.push(f);
+                }
+            }
+        }
+    }
+    assert!(seqs[0] != seqs[1] && seqs[1] != seqs[2] && seqs[0] != seqs[2], "{seqs:?}");
+}
+
+#[test]
+fn screens_option_with_a_single_screen_changes_nothing() {
+    let one = [Screen::px(1920, 1080)];
+    for mode in ["each", "main"] {
+        let mut a = Engine::with_desk(&one, 0, cfg(&format!("effects=all\nscreens={mode}"), 6));
+        let mut b = Engine::with_desk(&one, 0, cfg("effects=all", 6));
+        let mut t = 0.0;
+        while t < 40.0 {
+            t += 1.0 / 30.0;
+            assert_eq!(a.tick(t, NOW), b.tick(t, NOW));
+            assert!(a.pixels() == b.pixels(), "{mode} t={t}");
+        }
+    }
+}
