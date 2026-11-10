@@ -233,6 +233,12 @@ impl Engine {
         &self.ctx.g
     }
 
+    /// Franjas cambiadas en el último tick (x, y, w, h), en píxeles del búfer: copiarlas todas
+    /// equivale a copiar `dirty()` pero suele mover muchos menos píxeles.
+    pub fn dirty_rects(&self) -> &[(u32, u32, u32, u32)] {
+        self.raster.as_ref().map_or(&[], |r| &r.rects)
+    }
+
     /// Rectángulo cambiado en el último tick, en píxeles del búfer.
     pub fn dirty(&self) -> Option<(u32, u32, u32, u32)> {
         self.raster.as_ref().and_then(|r| r.dirty)
@@ -282,6 +288,7 @@ impl Engine {
             // pantalla en negro no dibuja nunca.
             if let Some(r) = self.raster.as_mut() {
                 r.dirty = None;
+                r.rects.clear();
             }
             return false;
         }

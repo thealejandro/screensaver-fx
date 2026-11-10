@@ -7,6 +7,9 @@ use std::collections::HashMap;
 
 pub const CW: usize = 8;
 pub const CH: usize = 16;
+/// Filas de celdas sin cambios que se copian igualmente para no partir una franja.
+const BAND_GAP: usize = 2;
+const MAX_BANDS: usize = 8;
 
 /// Máscara de 16 filas; bit i = columna i (bit 0 a la izquierda, como font8x8).
 type Mask = [u8; 16];
@@ -20,6 +23,8 @@ pub struct Raster {
     masks: HashMap<char, Mask>,
     /// Rectángulo cambiado en el último update (x, y, w, h) en px del búfer.
     pub dirty: Option<(u32, u32, u32, u32)>,
+    /// Franjas cambiadas en el último update (x, y, w, h) en px; juntas cubren todo lo que cambió.
+    pub rects: Vec<(u32, u32, u32, u32)>,
 }
 
 impl Raster {
@@ -33,30 +38,65 @@ impl Raster {
             prev: vec![EMPTY; cols * rows],
             masks: HashMap::new(),
             dirty: None,
+            rects: Vec::new(),
         }
     }
 
     /// Vuelca la rejilla al búfer. Devuelve true si cambió algún píxel.
     pub fn update(&mut self, g: &Grid) -> bool {
         let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0, 0);
-        for (i, cell) in g.cells.iter().enumerate() {
-            if *cell == self.prev[i] {
+        self.rects.clear();
+        // Franja abierta: filas de celdas seguidas con cambios (y0, y1, x0, x1) y la fila sin
+        // cambios más reciente, para cerrar la franja si hay un hueco.
+        let mut band: Option<(usize, usize, usize, usize)> = None;
+        for (cy, row) in g.cells.chunks(self.cols).enumerate() {
+            let (mut rx0, mut rx1) = (usize::MAX, 0);
+            for (cx, cell) in row.iter().enumerate() {
+                let i = cy * self.cols + cx;
+                if *cell == self.prev[i] {
+                    continue;
+                }
+                self.prev[i] = *cell;
+                self.draw_cell(cx, cy, *cell);
+                rx0 = rx0.min(cx);
+                rx1 = cx + 1;
+            }
+            if rx0 == usize::MAX {
                 continue;
             }
-            self.prev[i] = *cell;
-            let (cx, cy) = (i % self.cols, i / self.cols);
-            self.draw_cell(cx, cy, *cell);
-            x0 = x0.min(cx);
+            x0 = x0.min(rx0);
             y0 = y0.min(cy);
-            x1 = x1.max(cx + 1);
-            y1 = y1.max(cy + 1);
+            x1 = x1.max(rx1);
+            y1 = cy + 1;
+            band = match band {
+                // Un hueco corto no compensa otra llamada de copia.
+                Some((by0, by1, bx0, bx1)) if cy <= by1 + BAND_GAP => Some((by0, cy + 1, bx0.min(rx0), bx1.max(rx1))),
+                Some(b) => {
+                    self.push_band(b);
+                    Some((cy, cy + 1, rx0, rx1))
+                }
+                None => Some((cy, cy + 1, rx0, rx1)),
+            };
         }
         if x0 == usize::MAX {
             self.dirty = None;
             return false;
         }
-        self.dirty = Some(((x0 * CW) as u32, (y0 * CH) as u32, ((x1 - x0) * CW) as u32, ((y1 - y0) * CH) as u32));
+        if let Some(b) = band {
+            self.push_band(b);
+        }
+        let bbox = ((x0 * CW) as u32, (y0 * CH) as u32, ((x1 - x0) * CW) as u32, ((y1 - y0) * CH) as u32);
+        // Muchas franjas cuestan más llamadas que copiar el rectángulo entero.
+        if self.rects.len() > MAX_BANDS {
+            self.rects.clear();
+            self.rects.push(bbox);
+        }
+        self.dirty = Some(bbox);
         true
+    }
+
+    fn push_band(&mut self, (y0, y1, x0, x1): (usize, usize, usize, usize)) {
+        self.rects.push(((x0 * CW) as u32, (y0 * CH) as u32, ((x1 - x0) * CW) as u32, ((y1 - y0) * CH) as u32));
     }
 
     fn draw_cell(&mut self, cx: usize, cy: usize, cell: Cell) {
@@ -354,6 +394,17 @@ mod tests {
                 } else {
                     assert_eq!(row, old, "fotograma {frame} fila {y}");
                 }
+            }
+            // Cada píxel cambiado cae en alguna franja, y las franjas no salen del rectángulo.
+            assert_eq!(changed, !r.rects.is_empty());
+            assert!(r.rects.len() <= MAX_BANDS);
+            let inside = |x: usize, y: usize| r.rects.iter().any(|&(rx, ry, rw, rh)| (rx as usize..(rx + rw) as usize).contains(&x) && (ry as usize..(ry + rh) as usize).contains(&y));
+            for &(rx, ry, rw, rh) in &r.rects {
+                let (rx, ry, rw, rh) = (rx as usize, ry as usize, rw as usize, rh as usize);
+                assert!(rx >= dx && ry >= dy && rx + rw <= dx + dw && ry + rh <= dy + dh, "fotograma {frame}");
+            }
+            for (i, (a, b)) in r.px.iter().zip(&prev).enumerate() {
+                assert!(a == b || inside(i % r.w, i / r.w), "fotograma {frame} píxel {i} fuera de las franjas");
             }
             prev.copy_from_slice(&r.px);
         }

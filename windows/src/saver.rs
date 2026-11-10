@@ -120,25 +120,32 @@ unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESU
 /// Copia el búfer a la ventana. `full`: todo el búfer y bordes en negro (WM_PAINT).
 unsafe fn blit(s: &Saver, hdc: HDC, full: bool) {
     let l = s.engine.layout();
-    let px = s.engine.pixels();
     if full {
         let mut rc: RECT = core::mem::zeroed();
         GetClientRect(s.hwnd, &mut rc);
         FillRect(hdc, &rc, GetStockObject(BLACK_BRUSH));
     }
-    let (sx, sy, sw, sh, dx, dy, dw, dh) = match (full, l.int_scale(), s.engine.dirty()) {
-        (false, Some(k), Some((x, y, w, h))) => {
-            let (x, y, w, h) = (x as i32, y as i32, w as i32, h as i32);
-            (x, y, w, h, l.dst_x + x * k, l.dst_y + y * k, w * k, h * k)
-        }
-        _ => (0, 0, l.buf_w, l.buf_h, l.dst_x, l.dst_y, l.dst_w, l.dst_h),
-    };
     if l.scaled_down {
         SetStretchBltMode(hdc, HALFTONE);
         SetBrushOrgEx(hdc, 0, 0, core::ptr::null_mut());
     } else {
         SetStretchBltMode(hdc, COLORONCOLOR);
     }
+    match (full, l.int_scale()) {
+        // Con escala entera se copian solo las franjas que cambiaron.
+        (false, Some(k)) => {
+            for &(x, y, w, h) in s.engine.dirty_rects() {
+                let (x, y, w, h) = (x as i32, y as i32, w as i32, h as i32);
+                copy(s, hdc, (x, y, w, h), (l.dst_x + x * k, l.dst_y + y * k, w * k, h * k));
+            }
+        }
+        _ => copy(s, hdc, (0, 0, l.buf_w, l.buf_h), (l.dst_x, l.dst_y, l.dst_w, l.dst_h)),
+    }
+}
+
+/// Copia el trozo `src` del búfer (x, y, w, h) al trozo `dst` de la ventana.
+unsafe fn copy(s: &Saver, hdc: HDC, (sx, sy, sw, sh): (i32, i32, i32, i32), (dx, dy, dw, dh): (i32, i32, i32, i32)) {
+    let l = s.engine.layout();
     // DIB descendente que empieza en la fila `sy`: así el origen de la fuente es siempre (sx, 0).
     let mut bmi: BITMAPINFO = core::mem::zeroed();
     bmi.bmiHeader = BITMAPINFOHEADER {
@@ -150,7 +157,7 @@ unsafe fn blit(s: &Saver, hdc: HDC, full: bool) {
         biCompression: BI_RGB,
         ..core::mem::zeroed()
     };
-    let bits = px.as_ptr().add((sy * l.buf_w) as usize);
+    let bits = s.engine.pixels().as_ptr().add((sy * l.buf_w) as usize);
     StretchDIBits(hdc, dx, dy, dw, dh, sx, 0, sw, sh, bits as *const _, &bmi, DIB_RGB_COLORS, SRCCOPY);
 }
 
