@@ -26,6 +26,7 @@ enum Settings {
         effects=\(get("effects", "all"))
         lang=\(get("lang", "auto"))
         screens=\(get("screens", "span"))
+        font=\(get("font", "block"))
         """
     }
 

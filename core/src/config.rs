@@ -6,6 +6,7 @@
 //! lang=auto         # auto | es | en  (idioma de la fecha del reloj)
 //! effects=all       # all | classic | modern | lista separada por comas: neon,plasma
 //! banner=default    # default (JACC) | text (title + subtitle) | file (screensaver.txt)
+//! font=block        # block | shadow | outline | pixel  (letra del rótulo)
 //! title=JACC
 //! subtitle=XACODE
 //! ```
@@ -55,6 +56,21 @@ pub enum Banner {
     File,
 }
 
+/// Estilo de letra del rótulo de texto (y del rótulo por defecto).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Font {
+    /// Letras de bloque dibujadas a mano.
+    Block,
+    /// Bloque con sombra ░.
+    Shadow,
+    /// Solo el contorno de las letras.
+    Outline,
+    /// Letra de píxel 8x8 (la de las versiones anteriores; conserva las minúsculas).
+    Pixel,
+}
+
+pub const FONTS: [(&str, Font); 4] = [("block", Font::Block), ("shadow", Font::Shadow), ("outline", Font::Outline), ("pixel", Font::Pixel)];
+
 /// Cómo se reparten las animaciones con varios monitores (`screens=` en config.ini).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Screens {
@@ -70,6 +86,7 @@ pub enum Screens {
 #[derive(Clone, Debug)]
 pub struct Config {
     pub banner: Banner,
+    pub font: Font,
     pub title: String,
     pub subtitle: String,
     pub theme: ThemeSel,
@@ -89,6 +106,7 @@ impl Config {
     pub fn parse(ini: &str, accent: Rgb, seed: u64, sys_lang_es: bool) -> Config {
         let mut cfg = Config {
             banner: Banner::Default,
+            font: Font::Block,
             title: String::new(),
             subtitle: String::new(),
             theme: ThemeSel::Auto,
@@ -116,6 +134,7 @@ impl Config {
                         _ => Banner::Default,
                     }
                 }
+                "font" => cfg.font = FONTS.iter().find(|f| f.0 == v).map_or(Font::Block, |f| f.1),
                 "title" => cfg.title = raw.to_string(),
                 "subtitle" => cfg.subtitle = raw.to_string(),
                 "theme" => {
@@ -234,6 +253,16 @@ mod tests {
         assert_eq!(p("banner=").banner, Banner::Default);
         // Un valor inválido posterior vuelve al rótulo por defecto.
         assert_eq!(p("banner=text\nbanner=???").banner, Banner::Default);
+    }
+
+    #[test]
+    fn font_values() {
+        assert_eq!(p("").font, Font::Block);
+        for (id, font) in FONTS {
+            assert_eq!(p(&format!("font={id}")).font, font);
+            assert_eq!(p(&format!("Font = {} ", id.to_uppercase())).font, font);
+        }
+        assert_eq!(p("font=shadow\nfont=???").font, Font::Block);
     }
 
     #[test]
@@ -399,10 +428,11 @@ mod tests {
     #[test]
     fn windows_settings_format_round_trip() {
         // El formato que escribe windows/src/settings.rs.
-        let ini = "# Screensaver FX\nbanner=text\ntitle=JACC\nsubtitle=XACODE\ntheme=random\nsize=l\neffects=modern\nlang=en\n";
+        let ini = "# Screensaver FX\nbanner=text\ntitle=JACC\nsubtitle=XACODE\ntheme=random\nsize=l\neffects=modern\nlang=en\nfont=shadow\n";
         let c = Config::parse(ini, ACCENT, 9, true);
         assert_eq!(c.banner, Banner::Text);
         assert_eq!((c.title.as_str(), c.subtitle.as_str()), ("JACC", "XACODE"));
+        assert_eq!(c.font, Font::Shadow);
         assert_eq!(c.theme, ThemeSel::Random);
         assert_eq!(c.size, Size::L);
         assert!(c.effects.iter().all(|&i| !EFFECTS[i].classic));

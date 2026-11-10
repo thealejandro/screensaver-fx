@@ -1,6 +1,6 @@
 # Screensaver FX
 
-Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las animaciones del screensaver de Omarchy y 23 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
+Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las animaciones del screensaver de Omarchy y 26 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
 
 ## Instalar
 
@@ -93,10 +93,25 @@ git tag v0.1.0 && git push --tags
 
 GitHub Actions compila Windows (x64 + ARM64) y macOS (universal) y sube los instaladores a Releases, con una tabla de qué descargar según el equipo y los cambios `feat`/`fix`/`perf` desde la versión anterior (`.github/release-notes.sh`).
 
+## Rótulo y letra
+
+El rótulo puede ser el de por defecto, un texto propio (`banner=text` con `title` y `subtitle`) o un arte ASCII propio. El texto se dibuja con letras de bloque hechas a mano (A-Z, 0-9, signos, tildes y Ñ). La clave `font` de `config.ini` elige el estilo:
+
+| `font=` | Estilo |
+| --- | --- |
+| `block` | Letras de bloque macizas (por defecto) |
+| `shadow` | Bloque con sombra `░` |
+| `outline` | Solo el contorno del título |
+| `pixel` | Letra de píxel 8x8 de las versiones anteriores (conserva las minúsculas) |
+
+De momento `font` no tiene control en las ventanas de configuración: se escribe a mano en `%APPDATA%\ScreensaverFX\config.ini` (Windows) o con `defaults -currentHost write` sobre la clave `font` del módulo (macOS). Guardar desde la ventana conserva el valor.
+
 ## Herramientas
 
 ```bash
 cargo run -p ssfx-core --example snap --release -- snaps auto 1920 1080 "banner=text|title=Hola"   # fotogramas a PNG
+cargo run -p ssfx-core --example snap --release -- snaps auto 1920 1080 "" 0.1,0.3,0.6 vortex,laser   # solo esos momentos y efectos
+cargo run -p ssfx-core --example banner -- "Título" "subtítulo" shadow                             # el rótulo, en la terminal
 cargo run -p ssfx-core --example brand --release -- installer/assets                              # icono e imágenes
 cargo run -p ssfx-core --example desk --release -- desk relay,comet,tide 8                          # escritorio de 3 monitores a PNG
 ```

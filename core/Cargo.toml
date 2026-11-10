@@ -15,6 +15,9 @@ name = "snap"
 name = "brand"
 
 [[example]]
+name = "banner"
+
+[[example]]
 name = "bench"
 
 [[example]]

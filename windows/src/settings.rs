@@ -429,8 +429,10 @@ unsafe fn label_off(hwnd: HWND, id: i32) -> bool {
 
 unsafe fn build_ini(hwnd: HWND) -> String {
     let (themes, effects) = (theme_values(), effect_values());
+    // La letra del rótulo aún no tiene control en esta ventana: se conserva la de config.ini.
+    let font = read_map().get("font").cloned().unwrap_or_else(|| "block".to_string());
     format!(
-        "# Screensaver FX\nbanner={}\ntitle={}\nsubtitle={}\ntheme={}\nsize={}\neffects={}\nlang={}\nscreens={}\n",
+        "# Screensaver FX\nbanner={}\ntitle={}\nsubtitle={}\ntheme={}\nsize={}\neffects={}\nlang={}\nscreens={}\nfont={font}\n",
         BANNERS[combo_sel(hwnd, ID_BANNER).min(2)],
         text_of(hwnd, ID_TITLE),
         text_of(hwnd, ID_SUBTITLE),
