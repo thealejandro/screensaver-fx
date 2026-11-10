@@ -30,6 +30,7 @@ check "contiene el .saver con la misma firma" "codesign --verify --deep --strict
 
 echo "4) .dmg (arrastrar a Screen Savers)"
 MNT=/tmp/dmgqa
+hdiutil detach -quiet -force "$MNT" 2>/dev/null || true # de una ejecución anterior
 rm -rf "$MNT" && mkdir -p "$MNT"
 check "se verifica y monta" "hdiutil verify -quiet '$DIST/ScreensaverFX.dmg' && hdiutil attach -quiet -readonly -nobrowse -mountpoint '$MNT' '$DIST/ScreensaverFX.dmg'"
 check "contiene el .saver firmado" "codesign --verify --deep --strict '$MNT/ScreensaverFX.saver'"
@@ -38,7 +39,7 @@ check "fondo de la ventana" "[ -f '$MNT/.background/background.tiff' ]"
 if [ -f "$MNT/.DS_Store" ]; then echo "  OK    ventana diseñada por Finder"; else echo "  AVISO ventana sin diseño (Finder no respondió al empaquetar)"; fi
 # Arrastrar a «Screen Savers» es una copia a esa carpeta: lo mismo que hace Finder.
 check "arrastrar instala el protector" "sudo rm -rf '$SAVER' && sudo ditto '$MNT/ScreensaverFX.saver' '$SAVER' && codesign --verify --deep --strict '$SAVER'"
-hdiutil detach -quiet "$MNT" || hdiutil detach -quiet -force "$MNT"
+check "se desmonta" "hdiutil detach -quiet '$MNT' || hdiutil detach -quiet -force '$MNT'"
 
 echo "Resultado: $fails fallos"
 exit $fails
