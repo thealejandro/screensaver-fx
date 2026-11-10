@@ -25,6 +25,7 @@ enum Settings {
         size=\(get("size", "m"))
         effects=\(get("effects", "all"))
         lang=\(get("lang", "auto"))
+        font=\(get("font", "block"))
         """
     }
 

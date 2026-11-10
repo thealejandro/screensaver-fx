@@ -14,6 +14,9 @@ name = "snap"
 [[example]]
 name = "brand"
 
+[[example]]
+name = "banner"
+
 [lib]
 crate-type = ["rlib", "staticlib"]
 

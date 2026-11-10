@@ -5,12 +5,13 @@ pub mod art;
 pub mod color;
 pub mod config;
 pub mod ffi;
+pub mod font;
 pub mod fx;
 pub mod grid;
 pub mod raster;
 pub mod rng;
 
-pub use config::{Banner, Config, Lang, Size, ThemeSel};
+pub use config::{Banner, Config, Font, Lang, Size, ThemeSel};
 
 use art::Art;
 use color::{accent_palette, THEMES};
@@ -131,10 +132,10 @@ impl Engine {
     pub fn new(px_w: i32, px_h: i32, cfg: Config) -> Engine {
         let art = match cfg.banner {
             Banner::Default => None,
-            Banner::Text => Art::from_text(&cfg.title, &cfg.subtitle),
+            Banner::Text => Art::from_text_with(&cfg.title, &cfg.subtitle, cfg.font),
             Banner::File => cfg.art.as_deref().and_then(Art::parse),
         }
-        .unwrap_or_else(Art::default_art);
+        .unwrap_or_else(|| Art::default_art_with(cfg.font));
         let layout = compute_layout(px_w, px_h, cfg.size, (art.w + 8).max(40), art.h + 10);
         let mut rng = Rng::new(cfg.seed);
         let pal = match cfg.theme {
