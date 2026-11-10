@@ -4,6 +4,7 @@
 //! GDI. Guarda config.ini y, si se activa, lo deja como protector de pantalla del sistema.
 
 use crate::sys::{self, wide};
+use crate::update;
 use ssfx_core::art::{default_text, MAX_SUBTITLE, MAX_TITLE};
 use ssfx_core::color::THEMES;
 use ssfx_core::fx::EFFECTS;
@@ -39,8 +40,14 @@ const ID_LBL_TITLE: i32 = 120;
 const ID_LBL_SUBTITLE: i32 = 121;
 const ID_LBL_AFTER: i32 = 122;
 const ID_LBL_MINUTES: i32 = 123;
+const ID_UPDATE: i32 = 124;
 
 const TIMER_PREVIEW: usize = 1;
+/// Resultado del hilo que busca o descarga actualizaciones (LPARAM: `Box<Done>`).
+const WM_UPDATE_DONE: u32 = WM_APP + 1;
+/// Botón de actualizaciones en la cabecera.
+const UPD_W: i32 = 200;
+const UPD_Y: i32 = 18;
 /// Igual que el instalador: espera a que se deje de escribir antes de reiniciar la vista previa.
 const PREVIEW_DELAY_MS: u32 = 350;
 
@@ -168,6 +175,139 @@ thread_local! {
     /// Control bajo el ratón (para el resaltado) y estado del interruptor.
     static HOT: Cell<HWND> = const { Cell::new(core::ptr::null_mut()) };
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
+    /// Guardado sin cambios desde entonces (muestra «Cambios guardados» y «Cerrar»).
+    static SAVED: Cell<bool> = const { Cell::new(false) };
+    /// Hay cambios sin guardar.
+    static DIRTY: Cell<bool> = const { Cell::new(false) };
+    static UPD: RefCell<Upd> = RefCell::new(Upd::default());
+}
+
+/// Lo que muestra la zona de actualizaciones de la cabecera.
+#[derive(Default)]
+struct Upd {
+    status: String,
+    /// Mientras se busca o se descarga, el botón queda deshabilitado.
+    busy: bool,
+    /// Versión nueva disponible y la suma SHA-256 de su instalador.
+    new: Option<(String, String)>,
+}
+
+enum Done {
+    Checked(Result<update::Latest, String>),
+    Downloaded(String, Result<PathBuf, String>),
+}
+
+unsafe fn set_upd(hwnd: HWND, status: String, busy: bool, new: Option<(String, String)>) {
+    let label = match &new {
+        Some((v, _)) if update::is_installed() => format!("{} {v}", tr("Actualizar a", "Update to")),
+        Some(_) => tr("Abrir la descarga", "Open the download").to_string(),
+        None => tr("Buscar actualizaciones", "Check for updates").to_string(),
+    };
+    let b = item(hwnd, ID_UPDATE);
+    let t = wide(&label);
+    SetWindowTextW(b, t.as_ptr());
+    EnableWindow(b, (!busy) as BOOL);
+    UPD.with(|u| *u.borrow_mut() = Upd { status, busy, new });
+    InvalidateRect(hwnd, core::ptr::null(), FALSE);
+}
+
+/// Ejecuta `job` en otro hilo y entrega su resultado a la ventana como WM_UPDATE_DONE.
+fn in_background(hwnd: HWND, job: impl FnOnce() -> Done + Send + 'static) {
+    let h = hwnd as usize;
+    let _ = std::thread::Builder::new().stack_size(256 * 1024).spawn(move || {
+        let p = Box::into_raw(Box::new(job()));
+        if unsafe { PostMessageW(h as HWND, WM_UPDATE_DONE, 0, p as LPARAM) } == 0 {
+            // La ventana ya no existe.
+            drop(unsafe { Box::from_raw(p) });
+        }
+    });
+}
+
+unsafe fn update_clicked(hwnd: HWND) {
+    let (busy, new) = UPD.with(|u| (u.borrow().busy, u.borrow().new.clone()));
+    if busy {
+        return;
+    }
+    let Some((ver, hash)) = new else {
+        set_upd(hwnd, tr("Buscando actualizaciones…", "Checking for updates…").into(), true, None);
+        in_background(hwnd, || Done::Checked(update::latest()));
+        return;
+    };
+    if !update::is_installed() {
+        // Copia suelta (sin instalador): se descarga a mano.
+        let (op, url) = (wide("open"), wide(&format!("{}/latest", update::RELEASES)));
+        ShellExecuteW(hwnd, op.as_ptr(), url.as_ptr(), core::ptr::null(), core::ptr::null(), SW_SHOWNORMAL);
+        return;
+    }
+    if DIRTY.get() {
+        let t = wide(&format!(
+            "{} {ver} {}",
+            tr("Para instalar la versión", "To install version"),
+            tr("se cerrará esta ventana y se perderán los cambios sin guardar. ¿Continuar?", "this window will close and unsaved changes will be lost. Continue?")
+        ));
+        let c = wide("Screensaver FX");
+        if MessageBoxW(hwnd, t.as_ptr(), c.as_ptr(), MB_YESNO | MB_ICONQUESTION) != IDYES {
+            return;
+        }
+    }
+    set_upd(hwnd, format!("{} {ver}…", tr("Descargando la versión", "Downloading version")), true, Some((ver.clone(), hash.clone())));
+    in_background(hwnd, move || {
+        let r = update::download(&ver, &hash, &update::user_dir());
+        Done::Downloaded(ver, r)
+    });
+}
+
+unsafe fn update_done(hwnd: HWND, done: Done) {
+    let cur = update::VERSION;
+    match done {
+        Done::Checked(Ok(update::Latest::New { ver, hash })) => {
+            let s = format!("{} {ver} ({} {cur})", tr("Hay una versión nueva:", "A new version is out:"), tr("tienes la", "you have"));
+            set_upd(hwnd, s, false, Some((ver, hash)));
+        }
+        Done::Checked(Ok(update::Latest::UpToDate)) => {
+            set_upd(hwnd, format!("{} {cur} · {}", tr("Versión", "Version"), tr("es la más reciente", "it's the latest")), false, None);
+        }
+        Done::Checked(Ok(update::Latest::Dev)) => set_upd(hwnd, tr("Versión de desarrollo: sin actualizaciones", "Development build: no updates").into(), false, None),
+        Done::Checked(Err(e)) => {
+            crate::watch::log(&format!("configuración: no se pudo buscar actualizaciones: {e}"));
+            set_upd(hwnd, tr("No se pudo comprobar. Revisa la conexión.", "Couldn't check. Check your connection.").into(), false, None);
+        }
+        Done::Downloaded(ver, Err(e)) => {
+            crate::watch::log(&format!("configuración: no se pudo descargar {ver}: {e}"));
+            let new = UPD.with(|u| u.borrow().new.clone());
+            set_upd(hwnd, format!("{} {ver}.", tr("No se pudo descargar la versión", "Couldn't download version")), false, new);
+        }
+        Done::Downloaded(ver, Ok(setup)) => {
+            // El instalador sustituye este ejecutable: nada suyo puede seguir abierto.
+            stop_preview();
+            match update::launch_from_settings(&setup) {
+                Ok(()) => {
+                    DestroyWindow(hwnd);
+                }
+                Err((cancelled, e)) => {
+                    let new = UPD.with(|u| u.borrow().new.clone());
+                    let s = if cancelled {
+                        tr("Instalación cancelada.", "Installation cancelled.").to_string()
+                    } else {
+                        crate::watch::log(&format!("configuración: {e}"));
+                        format!("{} {ver}.", tr("No se pudo instalar la versión", "Couldn't install version"))
+                    };
+                    set_upd(hwnd, s, false, new);
+                    restart_preview(hwnd);
+                }
+            }
+        }
+    }
+}
+
+/// Algo cambió: ya no está «guardado».
+unsafe fn mark_dirty(hwnd: HWND) {
+    DIRTY.set(true);
+    if SAVED.replace(false) {
+        let t = wide(tr("Cancelar", "Cancel"));
+        SetWindowTextW(item(hwnd, IDCANCEL), t.as_ptr());
+        InvalidateRect(hwnd, core::ptr::null(), FALSE);
+    }
 }
 
 fn with_ui<R>(f: impl FnOnce(&Ui) -> R) -> Option<R> {
@@ -434,9 +574,19 @@ unsafe fn paint(hwnd: HWND) {
                 DrawIconEx(dc, u.px(PAD), u.px(22), u.icon, u.px(40), u.px(40), 0, core::ptr::null_mut(), DI_NORMAL);
             }
             let title = wide(tr("Personaliza tu protector", "Make it yours"));
-            draw_text(dc, u.font_title, pal.text, &title, &r(PAD + 54, 18, W - 120, 30), DT_LEFT);
+            let head_w = W - 2 * PAD - 54 - UPD_W - GAP;
+            draw_text(dc, u.font_title, pal.text, &title, &r(PAD + 54, 18, head_w, 30), DT_LEFT);
             let sub = wide(tr("Los cambios se ven al instante en la vista previa.", "Changes show up instantly in the preview."));
-            draw_text(dc, u.font, pal.dim, &sub, &r(PAD + 54, 46, W - 120, 22), DT_LEFT);
+            draw_text(dc, u.font, pal.dim, &sub, &r(PAD + 54, 46, head_w, 22), DT_LEFT);
+            // Bajo el botón de actualizaciones: versión instalada o lo que pasó al buscar.
+            let status = wide(&UPD.with(|s| s.borrow().status.clone()));
+            draw_text(dc, u.font_small, pal.dim, &status, &r(W - PAD - 330, UPD_Y + CTL_H + 6, 330, 18), DT_RIGHT);
+            // Pie: confirmación de guardado junto a los botones.
+            if SAVED.get() {
+                let ok = wide(tr("✓  Cambios guardados", "✓  Changes saved"));
+                let x0 = PAD + 128 + GAP;
+                draw_text(dc, u.font, pal.text, &ok, &r(x0, BUTTONS_Y, W - PAD - 2 * 112 - 8 - GAP - x0, CTL_H), DT_RIGHT | DT_VCENTER);
+            }
             // Tarjetas: opciones, vista previa y activación.
             for card in [r(PAD, CARD_Y, LEFT_W, CARD_H), r(RIGHT_X, CARD_Y, RIGHT_W, CARD_H), r(PAD, ACT_Y, W - 2 * PAD, ACT_H)] {
                 rrect(dc, &card, u.px(8), line, pal.bg, pal.card_line, pal.card);
@@ -512,7 +662,9 @@ unsafe fn draw_item(d: &DRAWITEMSTRUCT) {
                 rrect(dc, &kr, k / 2, 0, fill, knob, knob);
                 return;
             }
-            let (border, fill, text) = if id == IDOK {
+            let (border, fill, text) = if IsWindowEnabled(d.hwndItem) == 0 {
+                (pal.field_off_line, pal.field_off, pal.off)
+            } else if id == IDOK {
                 let a = mix(u.accent, out, if pressed { 0.22 } else if hot { 0.1 } else { 0.0 });
                 (a, a, u.on_accent)
             } else if pressed {
@@ -696,9 +848,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     let _ = spawn_with_draft(hwnd, &["/s".into()]);
                     false
                 }
+                ID_UPDATE => {
+                    update_clicked(hwnd);
+                    false
+                }
+                // Guarda y deja la ventana abierta con la confirmación a la vista.
                 IDOK => {
                     if save(hwnd) {
-                        DestroyWindow(hwnd);
+                        DIRTY.set(false);
+                        SAVED.set(true);
+                        let t = wide(tr("Cerrar", "Close"));
+                        SetWindowTextW(item(hwnd, IDCANCEL), t.as_ptr());
+                        InvalidateRect(hwnd, core::ptr::null(), FALSE);
                     } else {
                         let (t, c) = (wide(tr("No se pudo guardar la configuración.", "Could not save the settings.")), wide("Screensaver FX"));
                         MessageBoxW(hwnd, t.as_ptr(), c.as_ptr(), MB_ICONERROR);
@@ -714,6 +875,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             if changed {
                 SetTimer(hwnd, TIMER_PREVIEW, PREVIEW_DELAY_MS, None);
             }
+            if changed || (matches!(id, ID_ACTIVATE | ID_ACTIVATE_LABEL) && code == 0) || (id == ID_MINUTES && code == EN_CHANGE) {
+                mark_dirty(hwnd);
+            }
+            return 0;
+        }
+        WM_UPDATE_DONE => {
+            update_done(hwnd, *Box::from_raw(lp as *mut Done));
             return 0;
         }
         WM_CLOSE => {
@@ -1022,6 +1190,9 @@ pub fn run(owner: Option<HWND>) {
         b.button(ID_TEST, tr("Probar ahora", "Try it now"), PAD, BUTTONS_Y, 128, CTL_H);
         b.button(IDCANCEL, tr("Cancelar", "Cancel"), W - PAD - 2 * 112 - 8, BUTTONS_Y, 112, CTL_H);
         b.button(IDOK, tr("Guardar", "Save"), W - PAD - 112, BUTTONS_Y, 112, CTL_H);
+        // Cabecera, a la derecha: actualizaciones.
+        b.button(ID_UPDATE, "", W - PAD - UPD_W, UPD_Y, UPD_W, CTL_H);
+        set_upd(hwnd, format!("{} {}", tr("Versión", "Version"), update::VERSION), false, None);
 
         let accent = accent_color(pal.dark);
         UI.with(|u| {

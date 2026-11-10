@@ -25,7 +25,7 @@ pub const VERSION: &str = match option_env!("SSFX_VERSION") {
     Some(v) => v,
     None => env!("CARGO_PKG_VERSION"),
 };
-const RELEASES: &str = "https://github.com/thealejandro/screensaver-fx/releases";
+pub const RELEASES: &str = "https://github.com/thealejandro/screensaver-fx/releases";
 const BUSY: &str = "Global\\ScreensaverFX.Busy";
 const FIRST_CHECK_SECS: u64 = 3 * 60;
 const EVERY_SECS: u64 = 24 * 60 * 60;
@@ -246,30 +246,82 @@ fn relaunch_watchers(sessions: &[u32]) -> usize {
     ok
 }
 
-/// Comprueba e instala si hay algo nuevo. `system`: ejecutado por la tarea programada.
-fn update(system: bool) -> Result<String, String> {
-    let Some(cur) = parse_version(VERSION).filter(|&v| v != (0, 0, 0)) else {
-        return Ok(format!("compilación de desarrollo ({VERSION}): sin actualizaciones"));
-    };
+pub enum Latest {
+    /// Compilación sin versión (0.0.0): no se actualiza.
+    Dev,
+    UpToDate,
+    /// Versión nueva y la suma SHA-256 de su instalador.
+    New { ver: String, hash: String },
+}
+
+/// Qué hay publicado en la última release comparado con este ejecutable.
+pub fn latest() -> Result<Latest, String> {
+    let Some(cur) = parse_version(VERSION).filter(|&v| v != (0, 0, 0)) else { return Ok(Latest::Dev) };
     let sums = http_get(&format!("{}/latest/download/SHA256SUMS.txt", base()), 64 * 1024)?;
     let (v, ver, hash) = newest(&String::from_utf8_lossy(&sums)).ok_or("SHA256SUMS.txt sin instalador")?;
-    if v <= cur {
-        return Ok(format!("al día ({VERSION})"));
-    }
-    if busy() {
-        return Err(format!("{ver} disponible, pero el protector o la configuración están abiertos: se reintentará"));
-    }
+    Ok(if v <= cur { Latest::UpToDate } else { Latest::New { ver, hash } })
+}
+
+/// Descarga el instalador de `ver` en `dir` (vaciada antes) y comprueba su SHA-256.
+pub fn download(ver: &str, hash: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
     let data = http_get(&format!("{}/download/v{ver}/ScreensaverFX-Setup-{ver}.exe", base()), 64 << 20)?;
     if sha256_hex(&data) != hash {
         return Err(format!("el instalador {ver} no coincide con su SHA-256: descartado"));
     }
-    // Para todos: en la carpeta del programa (solo la escriben administradores).
-    let dir = if system { exe().with_file_name("update") } else { std::env::temp_dir().join("ScreensaverFX-update") };
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let setup = dir.join(format!("ScreensaverFX-Setup-{ver}.exe"));
     std::fs::write(&setup, &data).map_err(|e| format!("{}: {e}", setup.display()))?;
-    drop(data);
+    Ok(setup)
+}
+
+/// Carpeta temporal del instalador descargado por un usuario.
+pub fn user_dir() -> PathBuf {
+    std::env::temp_dir().join("ScreensaverFX-update")
+}
+
+/// Instalado con su desinstalador (no una copia suelta).
+pub fn is_installed() -> bool {
+    installed()
+}
+
+/// Desde la configuración: lanza el instalador con su barra de progreso (pide permisos de
+/// administrador si es para todos). Con /FROMCONFIG, al terminar arranca el vigilante y vuelve a
+/// abrir la configuración. Error con `cancelled = true` si se rechazó el aviso de permisos.
+pub fn launch_from_settings(setup: &std::path::Path) -> Result<(), (bool, String)> {
+    use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW};
+    let mode = if all_users_install() { "/ALLUSERS" } else { "/CURRENTUSER" };
+    let params = format!("/SILENT /SUPPRESSMSGBOXES /NORESTART /AUTOUPDATE /FROMCONFIG {mode} \"/LOG={}\"", setup.with_file_name("setup.log").display());
+    let (verb, file, params) = (wide(if all_users_install() { "runas" } else { "open" }), wide(&setup.display().to_string()), wide(&params));
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: core::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOASYNC,
+        lpVerb: verb.as_ptr(),
+        lpFile: file.as_ptr(),
+        lpParameters: params.as_ptr(),
+        nShow: 1, /* SW_SHOWNORMAL */
+        ..unsafe { core::mem::zeroed() }
+    };
+    if unsafe { ShellExecuteExW(&mut info) } != 0 {
+        return Ok(());
+    }
+    let e = unsafe { GetLastError() };
+    Err((e == ERROR_CANCELLED, format!("no se pudo lanzar el instalador: error {e}")))
+}
+
+/// Comprueba e instala si hay algo nuevo. `system`: ejecutado por la tarea programada.
+fn update(system: bool) -> Result<String, String> {
+    let (ver, hash) = match latest()? {
+        Latest::Dev => return Ok(format!("compilación de desarrollo ({VERSION}): sin actualizaciones")),
+        Latest::UpToDate => return Ok(format!("al día ({VERSION})")),
+        Latest::New { ver, hash } => (ver, hash),
+    };
+    if busy() {
+        return Err(format!("{ver} disponible, pero el protector o la configuración están abiertos: se reintentará"));
+    }
+    // Para todos: en la carpeta del programa (solo la escriben administradores).
+    let dir = if system { exe().with_file_name("update") } else { user_dir() };
+    let setup = download(&ver, &hash, &dir)?;
     let log = format!("/LOG={}", dir.join("setup.log").display());
     let mode = if system { "/ALLUSERS" } else { "/CURRENTUSER" };
     let args = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/AUTOUPDATE", mode, &log];

@@ -146,6 +146,7 @@ Type: filesandordirs; Name: "{app}\update"
 
 [Run]
 Filename: "{app}\ScreensaverFX.exe"; Parameters: "/watch"; Flags: nowait runasoriginaluser; Check: StartWatcher
+Filename: "{app}\ScreensaverFX.exe"; Parameters: "/c"; Flags: nowait runasoriginaluser; Check: IsFromConfig
 Filename: "{app}\ScreensaverFX.exe"; Parameters: "/s"; Description: "{cm:RunTest}"; Flags: postinstall nowait skipifsilent unchecked
 Filename: "control.exe"; Parameters: "desk.cpl,,@screensaver"; Description: "{cm:RunSettings}"; Flags: postinstall nowait skipifsilent unchecked shellexec
 
@@ -184,9 +185,16 @@ begin
   Result := Pos('/AUTOUPDATE', Uppercase(GetCmdTail)) > 0;
 end;
 
+{ /FROMCONFIG: actualización pedida desde la configuración (windows/src/settings.rs). Al acabar
+  vuelve a abrirla y, aunque sea para todos, arranca el vigilante de esta sesión (lo detuvo). }
+function IsFromConfig: Boolean;
+begin
+  Result := Pos('/FROMCONFIG', Uppercase(GetCmdTail)) > 0;
+end;
+
 function StartWatcher: Boolean;
 begin
-  Result := not (IsAutoUpdate and IsAdminInstallMode);
+  Result := IsFromConfig or not (IsAutoUpdate and IsAdminInstallMode);
 end;
 
 function GetLongPathName(lpszShortPath: String; lpszLongPath: String; cchBuffer: Cardinal): Cardinal;
