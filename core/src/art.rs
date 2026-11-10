@@ -44,8 +44,7 @@ impl Art {
 
     /// JACC + XACODE con el estilo de letra pedido (la de píxel no aplica: es un dibujo a mano).
     pub fn default_art_with(font: Font) -> Art {
-        let lines: Vec<String> = default_text().trim_end_matches('\n').split('\n').map(str::to_string).collect();
-        Art::parse(&(styled(lines, font).join("\n") + "\n")).expect("rótulo por defecto")
+        Art::parse(&default_text_with(font)).expect("rótulo por defecto")
     }
 }
 
@@ -275,6 +274,12 @@ pub fn banner_text_with(title: &str, subtitle: &str, font: Font) -> String {
 
 fn render<const N: usize>(letters: &[&[&str; N]], gap: usize) -> Vec<String> {
     (0..N).map(|r| letters.iter().map(|l| l[r]).collect::<Vec<_>>().join(&" ".repeat(gap))).collect()
+}
+
+/// El rótulo por defecto con un estilo de letra.
+pub fn default_text_with(font: Font) -> String {
+    let lines: Vec<String> = default_text().trim_end_matches('\n').split('\n').map(str::to_string).collect();
+    styled(lines, font).join("\n") + "\n"
 }
 
 /// El mismo screensaver.txt que genera examples/generate-screensaver.py.

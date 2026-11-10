@@ -10,7 +10,7 @@ mod sys;
 #[cfg(unix)]
 mod term;
 
-use ssfx_core::art::banner_text_with;
+use ssfx_core::art::{banner_text_with, default_text_with};
 use ssfx_core::color::{accent_palette, build_palette, Rgb, THEMES};
 use ssfx_core::fx::{fx_index, EFFECTS};
 use ssfx_core::{Banner, Config, Font, ThemeSel};
@@ -273,15 +273,14 @@ fn main() {
                 (t.clone(), args.words.get(1).cloned().unwrap_or_default(), cfg.font)
             } else if let Some(m) = saved {
                 (m[0].clone(), m[1].clone(), font_named(&m[2]).unwrap_or(cfg.font))
-            } else if !cfg.title.is_empty() || !cfg.subtitle.is_empty() {
-                (cfg.title.clone(), cfg.subtitle.clone(), cfg.font)
             } else {
-                ("JACC".to_string(), "XACODE".to_string(), cfg.font)
+                (cfg.title.clone(), cfg.subtitle.clone(), cfg.font)
             };
             if let Some(f) = &args.font {
                 font = font_named(f).unwrap_or_else(|| fail(&format!("letra desconocida: {f}")));
             }
-            let text = banner_text_with(&title, &subtitle, font);
+            // Sin ningún texto: el rótulo por defecto, tal cual lo dibuja el protector.
+            let text = if title.is_empty() && subtitle.is_empty() { default_text_with(font) } else { banner_text_with(&title, &subtitle, font) };
             if text.trim().is_empty() {
                 fail("ese texto no tiene nada que se pueda dibujar");
             }
