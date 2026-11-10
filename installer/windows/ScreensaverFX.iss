@@ -334,6 +334,9 @@ begin
   AddLine(A, 'effects=' + FxValues[FxCombo.ItemIndex]);
   if Cv('lang', '') <> '' then
     AddLine(A, 'lang=' + Cv('lang', ''));
+  { Lo que el asistente no pregunta se conserva tal cual (se elige en el configurador). }
+  if Cv('screens', '') <> '' then
+    AddLine(A, 'screens=' + Cv('screens', ''));
   Result := A;
 end;
 
