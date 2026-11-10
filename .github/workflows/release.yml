@@ -133,7 +133,7 @@ jobs:
         run: |
           BIN="$PWD/dist/screensaver-fx-linux-${{ matrix.arch }}"
           ! ldd "$BIN" 2>/dev/null | grep -q '=>' || { echo "::error::el binario no es estático"; exit 1; }
-          [ "$("$BIN" --list | wc -l)" -ge 27 ]
+          [ "$("$BIN" --list | wc -l)" -ge 29 ]
           "$BIN" --banner "QA" "linux" --font shadow | grep -q '█'
           # 2,2 s: el núcleo garantiza (y prueba) que todo efecto ha pintado algo a los 2 s; con
           # menos, los que arrancan con retardo al azar (beams) pueden no haber empezado.
@@ -190,6 +190,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -199,5 +201,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp install.ps1 install.sh dist/
+          # Sin las copias con versión del .dmg y el .pkg: en la lista basta un archivo de cada tipo.
+          rm -f dist/ScreensaverFX-[0-9]*.dmg dist/ScreensaverFX-[0-9]*.pkg
           (cd dist && sha256sum * > SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Screensaver FX ${GITHUB_REF_NAME#v}" --generate-notes
+          # Tabla de qué descargar según el equipo y los cambios desde el release anterior.
+          bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Screensaver FX ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"

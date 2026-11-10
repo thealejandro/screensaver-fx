@@ -1,6 +1,6 @@
 # Screensaver FX
 
-Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 21 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 27 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
+Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 23 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 29 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
 
 ## Instalar
 
@@ -118,7 +118,7 @@ cargo build -p ssfx-term --release     # target/release/screensaver-fx
 git tag v0.1.0 && git push --tags
 ```
 
-GitHub Actions compila Windows (x64 + ARM64), macOS (universal) y Linux (x86_64 + aarch64, estático) y sube los instaladores y binarios a Releases.
+GitHub Actions compila Windows (x64 + ARM64), macOS (universal) y Linux (x86_64 + aarch64, estático) y sube los instaladores a Releases, con una tabla de qué descargar según el equipo y los cambios `feat`/`fix`/`perf` desde la versión anterior (`.github/release-notes.sh`).
 
 ## Rótulo y letra
 

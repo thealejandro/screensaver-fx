@@ -1,6 +1,6 @@
-//! Efectos con partículas y física sencilla: fuegos artificiales, rebote, láser y cristal.
+//! Efectos con partículas y física sencilla: fuegos artificiales, rebote y cristal.
 
-use super::{clamp01, ease_out_cubic, flash, settle, shine, Ctx, Effect};
+use super::{clamp01, flash, settle, shine, Ctx, Effect};
 use crate::color::{gradient, mix, scale, Rgb, WHITE};
 use crate::rng::{hash3, hf};
 use core::f32::consts::TAU;
@@ -208,79 +208,6 @@ impl Effect for Bounce {
             let hit = start + BOUNCE_DUR / 2.75;
             let col = if t < hit { mix(base, WHITE, 0.2) } else { flash(base, t - hit, 0.5) };
             c.g.put(c.x0 + x, c.y0 + y + off.round() as i32, ch, shine(col, &c.art, x, y, t, 6.2, 8.0));
-        }
-    }
-}
-
-// ── Láser ───────────────────────────────────────────────────────────────────
-
-struct Laser {
-    /// x, y, vx, vy, vida
-    sparks: Vec<[f32; 5]>,
-    salt: u32,
-}
-
-const LASER_T0: f32 = 0.1;
-const LASER_DUR: f32 = 5.2;
-
-pub fn laser(c: &mut Ctx) -> Box<dyn Effect> {
-    Box::new(Laser { sparks: Vec::new(), salt: c.rng.next_u64() as u32 })
-}
-
-impl Effect for Laser {
-    fn draw(&mut self, t: f32, dt: f32, c: &mut Ctx) {
-        let (w, h) = (c.art.w.max(1), c.art.h.max(1));
-        let span = (w + 1) as f32;
-        let q = (t - LASER_T0) / LASER_DUR;
-        let head = q * span - 0.5;
-        for &(x, y, ch) in &c.art.cells {
-            let passed = LASER_T0 + (x as f32 + 0.5) / span * LASER_DUR;
-            if t < passed {
-                continue;
-            }
-            let since = t - passed;
-            let hot = mix(WHITE, ORANGE, clamp01(since / 0.2));
-            let col = mix(hot, settle(&c.pal, &c.art, x, y, t), ease_out_cubic(since / 1.1));
-            c.g.put(c.x0 + x, c.y0 + y, ch, shine(col, &c.art, x, y, t, 7.0, 8.8));
-        }
-        let firing = (0.0..1.0).contains(&q);
-        if firing {
-            // El rayo sale del centro de arriba y tiembla por la columna que está grabando.
-            let step = (t * 30.0) as u32;
-            let (sx, sy) = (c.g.cols as f32 / 2.0, 0.0f32);
-            let (tx, ty) = (c.x0 as f32 + head, (c.y0 + (hash3(step, 1, self.salt) % h as u32) as i32) as f32);
-            let (dx, dy) = (tx - sx, ty - sy);
-            let glyph = if dx.abs() < dy.abs() * 0.8 {
-                '|'
-            } else if dx.abs() > dy.abs() * 5.0 {
-                '-'
-            } else if dx * dy < 0.0 {
-                '/'
-            } else {
-                '\\'
-            };
-            let steps = dx.abs().max(dy.abs()).ceil().max(1.0) as i32;
-            let beam = mix(gradient(&c.pal, 0.5), WHITE, 0.7);
-            for k in 0..steps {
-                let f = k as f32 / steps as f32;
-                let flicker = 0.55 + 0.45 * hf(k as u32, step, self.salt);
-                c.g.put((sx + dx * f).round() as i32, (sy + dy * f).round() as i32, glyph, scale(beam, (0.7 + 0.3 * flicker) * (0.75 + 0.25 * f)));
-            }
-            c.g.put(tx.round() as i32, ty.round() as i32, '✶', WHITE);
-            for _ in 0..((dt * 70.0).ceil() as usize).min(8) {
-                self.sparks.push([tx, ty, c.rng.range(-11.0, 11.0), c.rng.range(-9.0, -1.0), c.rng.range(0.25, 0.7)]);
-            }
-        }
-        self.sparks.retain_mut(|s| {
-            s[0] += s[2] * dt;
-            s[1] += s[3] * dt;
-            s[3] += 24.0 * dt;
-            s[4] -= dt;
-            s[4] > 0.0
-        });
-        for s in &self.sparks {
-            let k = clamp01(s[4] / 0.5);
-            c.g.put(s[0].round() as i32, s[1].round() as i32, if k > 0.5 { '•' } else { '·' }, scale(mix(ORANGE, YELLOW, k), 0.4 + 0.6 * k));
         }
     }
 }
