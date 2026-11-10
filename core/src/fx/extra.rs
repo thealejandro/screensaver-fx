@@ -12,16 +12,16 @@ fn target(c: &Ctx, x: i32, y: i32) -> (f32, f32) {
 }
 
 /// Centro del rótulo en la rejilla.
-fn art_center(c: &Ctx) -> (f32, f32) {
+pub(super) fn art_center(c: &Ctx) -> (f32, f32) {
     (c.x0 as f32 + c.art.w as f32 / 2.0, c.y0 as f32 + c.art.h as f32 / 2.0)
 }
 
 /// Distancia en celdas "cuadradas": una fila mide lo que dos columnas.
-fn dist(dx: f32, dy: f32) -> f32 {
+pub(super) fn dist(dx: f32, dy: f32) -> f32 {
     dx.hypot(dy * 2.0)
 }
 
-fn smooth(v: f32) -> f32 {
+pub(super) fn smooth(v: f32) -> f32 {
     let v = clamp01(v);
     v * v * (3.0 - 2.0 * v)
 }

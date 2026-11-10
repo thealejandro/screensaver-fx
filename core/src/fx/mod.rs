@@ -5,6 +5,7 @@ mod extra;
 mod modern;
 mod multi;
 mod particles;
+mod show;
 
 use crate::art::Art;
 use crate::desk::Desk;
@@ -62,7 +63,7 @@ macro_rules! fx {
     };
 }
 
-pub static EFFECTS: [FxDef; 32] = [
+pub static EFFECTS: [FxDef; 35] = [
     fx!(c"neon", c"Neón", c"Neon", 14.0, true, classic::neon),
     fx!(c"starfield", c"Estrellas", c"Starfield", 16.0, true, classic::starfield),
     fx!(c"terminal", c"Terminal", c"Terminal", 10.0, true, classic::terminal),
@@ -95,6 +96,9 @@ pub static EFFECTS: [FxDef; 32] = [
     fx!(c"fireworks", c"Fuegos artificiales", c"Fireworks", 13.0, false, particles::fireworks),
     fx!(c"bounce", c"Rebote", c"Bounce", 10.0, false, particles::bounce),
     fx!(c"crystal", c"Cristal", c"Crystal", 11.0, false, particles::crystal),
+    fx!(c"retro", c"Retro", c"Retro", 14.0, false, show::retro),
+    fx!(c"bubbles", c"Burbujas", c"Bubbles", 12.0, false, show::bubbles),
+    fx!(c"radar", c"Radar", c"Radar", 12.0, false, show::radar),
 ];
 
 pub fn fx_index(id: &str) -> Option<usize> {
@@ -349,7 +353,7 @@ mod tests {
 
     #[test]
     fn random_effects_depend_on_the_seed() {
-        for id in ["neon", "starfield", "decrypt", "rain", "scatter", "matrix", "burn", "vortex", "fireflies", "aurora", "equalizer", "storm", "spiral"] {
+        for id in ["neon", "starfield", "decrypt", "rain", "scatter", "matrix", "burn", "vortex", "fireflies", "aurora", "equalizer", "storm", "spiral", "fireworks", "retro", "bubbles", "radar"] {
             let def = &EFFECTS[fx_index(id).unwrap()];
             let frame = |seed| {
                 let mut c = ctx(90, 30, Art::default_art(), seed);
