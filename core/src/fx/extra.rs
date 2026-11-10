@@ -1,7 +1,9 @@
-//! Más efectos de una pantalla: remolino, gota, luciérnagas, aurora, láser, ecualizador y mosaico.
+//! Más efectos de una pantalla: remolino, gota, luciérnagas, aurora, láser, ecualizador, mosaico,
+//! tormenta, persiana y espiral.
 
 use super::{clamp01, ease_in_out_cubic, ease_out_cubic, flash, settle, shine, Ctx, Effect};
 use crate::color::{gradient, mix, scale, Rgb, WHITE};
+use crate::rng::hf;
 use core::f32::consts::TAU;
 
 /// Celda de la rejilla donde va la letra `(x, y)` del rótulo.
@@ -343,7 +345,7 @@ impl Effect for Laser {
             // Cada chispa nace en el punto de grabado, sale despedida hacia un lado y cae.
             let life = t * 2.5 + k as f32 / SPARKS as f32;
             let (age, gen) = (life.fract(), life.floor() as u32);
-            let vx = (crate::rng::hf(k, gen, 7) - 0.5) * 12.0;
+            let vx = (hf(k, gen, 7) - 0.5) * 12.0;
             let (sx, sy) = (tx + vx * age, ty - 1.5 * age + 4.0 * age * age);
             let col = scale(mix(WHITE, gradient(&c.pal, 0.9), age), 1.0 - age * 0.7);
             c.g.put(sx.round() as i32, sy.round() as i32, if age < 0.35 { '*' } else { '·' }, col);
@@ -478,6 +480,210 @@ impl Effect for Mosaic {
                     }
                 }
             }
+        }
+    }
+}
+
+// ── Tormenta ────────────────────────────────────────────────────────────────
+
+/// Cuándo cae cada rayo; cada uno enciende un tramo del rótulo, de izquierda a derecha.
+const STRIKES: [f32; 5] = [1.0, 2.2, 3.1, 4.3, 5.4];
+const BOLT_LIFE: f32 = 0.35;
+
+/// Lluvia en la oscuridad; cada rayo que cae enciende un tramo del rótulo.
+struct Storm {
+    seed: u32,
+    /// Desvío del punto de salida de cada rayo, en fracción del ancho de la pantalla.
+    from: [f32; STRIKES.len()],
+}
+
+pub fn storm(c: &mut Ctx) -> Box<dyn Effect> {
+    let seed = c.rng.next_u64() as u32;
+    let from = core::array::from_fn(|_| c.rng.range(-0.15, 0.15));
+    Box::new(Storm { seed, from })
+}
+
+impl Storm {
+    /// Tramo del rótulo al que pertenece la columna `x`.
+    fn part(x: i32, w: i32) -> usize {
+        (x.max(0) as usize * STRIKES.len() / w.max(1) as usize).min(STRIKES.len() - 1)
+    }
+}
+
+impl Effect for Storm {
+    fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
+        let (cols, rows) = (c.g.cols, c.g.rows);
+        // Un rayo reciente ilumina la escena entera un instante.
+        let glow = STRIKES.iter().filter(|&&s| t >= s).map(|&s| 1.0 - clamp01((t - s) / 0.25)).fold(0.0f32, f32::max);
+        // Lluvia en diagonal que amaina al final.
+        let calm = (1.0 - smooth((t - 7.0) / 2.5)) * clamp01(t / 0.5);
+        if calm > 0.0 && cols > 0 && rows > 0 {
+            let drops = ((cols * rows) / 45).clamp(6, 600) as u32;
+            let rain = scale(gradient(&c.pal, 0.25), (0.22 + 0.5 * glow) * calm);
+            for k in 0..drops {
+                let p = (t * (0.9 + 0.6 * hf(k, self.seed, 1)) + hf(k, self.seed, 2)).fract();
+                let y = p * (rows + 3) as f32 - 2.0;
+                let x = (hf(k, self.seed, 3) * cols as f32 + y * 0.5).rem_euclid(cols as f32);
+                c.g.put(x as i32, y.floor() as i32, '\\', rain);
+            }
+        }
+        let w = c.art.w.max(1);
+        for (i, &s) in STRIKES.iter().enumerate() {
+            let age = t - s;
+            // Parpadea mientras dura.
+            if !(0.0..BOLT_LIFE).contains(&age) || (age * 30.0) as i32 % 3 == 1 {
+                continue;
+            }
+            let tx = c.x0 as f32 + (i as f32 + 0.5) / STRIKES.len() as f32 * w as f32;
+            let col = mix(WHITE, gradient(&c.pal, 0.7), age / BOLT_LIFE);
+            // Del cielo a lo alto de su tramo, en zigzag.
+            let mut x = tx + self.from[i] * cols as f32;
+            for y in 0..c.y0 {
+                let left = (c.y0 - y) as f32;
+                let step = ((tx - x) / left + (hf(i as u32, y as u32, self.seed) - 0.5) * 2.6).clamp(-2.0, 2.0);
+                // Núcleo de bloque con un halo tenue a los lados; en los saltos largos rellena el hueco.
+                let (a, b) = (x.round() as i32, (x + step).round() as i32);
+                let (lo, hi) = (a.min(b), a.max(b));
+                let halo = scale(col, 0.35);
+                c.g.put(lo - 1, y, '░', halo);
+                c.g.put(hi + 1, y, '░', halo);
+                for gx in lo..=hi {
+                    c.g.put(gx, y, '█', col);
+                }
+                x += step;
+            }
+        }
+        for &(x, y, ch) in &c.art.cells {
+            let hit = STRIKES[Self::part(x, w)];
+            let base = settle(&c.pal, &c.art, x, y, t);
+            if t < hit {
+                // Los relámpagos dejan ver un momento la silueta de lo que falta.
+                if glow > 0.0 {
+                    c.g.put(c.x0 + x, c.y0 + y, ch, scale(base, 0.3 * glow));
+                }
+                continue;
+            }
+            let col = mix(flash(base, t - hit, 0.7), WHITE, glow * 0.25);
+            c.g.put(c.x0 + x, c.y0 + y, ch, shine(col, &c.art, x, y, t, 8.6, 10.4));
+        }
+    }
+}
+
+// ── Persiana ────────────────────────────────────────────────────────────────
+
+const BLIND_START: f32 = 0.5;
+const BLIND_SWEEP: f32 = 2.6;
+const BLIND_SLANT: f32 = 0.5;
+const BLIND_TURN: f32 = 0.7;
+
+/// Una persiana cubre la pantalla y sus lamas giran de arriba abajo hasta dejar ver el rótulo.
+struct Blinds;
+
+pub fn blinds(_c: &mut Ctx) -> Box<dyn Effect> {
+    Box::new(Blinds)
+}
+
+impl Blinds {
+    /// Cuándo termina de abrirse la lama en la celda `(x, y)` de la pantalla.
+    fn opened(x: i32, y: i32, cols: i32, rows: i32) -> f32 {
+        BLIND_START + BLIND_SWEEP * y as f32 / rows.max(1) as f32 + BLIND_SLANT * x as f32 / cols.max(1) as f32 + BLIND_TURN
+    }
+}
+
+impl Effect for Blinds {
+    fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
+        let (cols, rows) = (c.g.cols, c.g.rows);
+        if t < BLIND_START + BLIND_SWEEP + BLIND_SLANT + BLIND_TURN {
+            let fade = clamp01(t / 0.4);
+            for y in 0..rows {
+                for x in 0..cols {
+                    let o = clamp01(1.0 - (Self::opened(x, y, cols, rows) - t) / BLIND_TURN);
+                    if o >= 1.0 {
+                        continue;
+                    }
+                    // Al girar, la lama se ve cada vez más fina y le da la luz a mitad de giro.
+                    let ch = EQ_BARS[7 - ((o * 8.0) as usize).min(7)];
+                    let g = gradient(&c.pal, x as f32 / cols as f32 * 0.6 + y as f32 / rows as f32 * 0.4);
+                    let shade = if y % 2 == 0 { 0.34 } else { 0.26 };
+                    c.g.put(x, y, ch, scale(g, (shade + 1.6 * o * (1.0 - o)) * fade));
+                }
+            }
+        }
+        for &(x, y, ch) in &c.art.cells {
+            let since = t - Self::opened(c.x0 + x, c.y0 + y, cols, rows);
+            if since < 0.0 {
+                continue;
+            }
+            let col = shine(flash(settle(&c.pal, &c.art, x, y, t), since, 0.5), &c.art, x, y, t, 7.5, 9.3);
+            c.g.put(c.x0 + x, c.y0 + y, ch, col);
+        }
+    }
+}
+
+// ── Espiral ─────────────────────────────────────────────────────────────────
+
+const SPIRAL_CH: [char; 4] = ['·', '░', '▒', '▓'];
+/// Giro de la espiral en radianes por segundo.
+const SPIRAL_SPIN: f32 = 3.0;
+const SPIRAL_REVEAL: f32 = 1.2;
+const SPIRAL_REVEAL_DUR: f32 = 3.5;
+
+/// Los brazos de una espiral giran hacia el centro y encienden las letras al pasar por encima.
+struct Spiral {
+    arms: f32,
+    dir: f32,
+    twist: f32,
+}
+
+pub fn spiral(c: &mut Ctx) -> Box<dyn Effect> {
+    let arms = [2.0, 3.0, 4.0][c.rng.below(3)];
+    let dir = if c.rng.chance(0.5) { 1.0 } else { -1.0 };
+    let twist = c.rng.range(0.22, 0.34);
+    Box::new(Spiral { arms, dir, twist })
+}
+
+impl Spiral {
+    /// Fase de la espiral en un punto relativo al centro: los brazos están donde vale 0.
+    fn phase(&self, dx: f32, dy: f32) -> f32 {
+        self.arms * (dy * 2.0).atan2(dx) + dist(dx, dy) * self.twist
+    }
+}
+
+impl Effect for Spiral {
+    fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
+        let (cx, cy) = art_center(c);
+        let fade = clamp01(t / 0.8) * (1.0 - smooth((t - 6.5) / 2.0));
+        if fade > 0.0 {
+            let far = dist(c.g.cols as f32, c.g.rows as f32).max(1.0);
+            for gy in 0..c.g.rows {
+                for gx in 0..c.g.cols {
+                    let (dx, dy) = (gx as f32 + 0.5 - cx, gy as f32 + 0.5 - cy);
+                    let v = clamp01(((self.phase(dx, dy) - self.dir * SPIRAL_SPIN * t).cos() - 0.55) / 0.45);
+                    if v <= 0.0 {
+                        continue;
+                    }
+                    let near = 1.0 - dist(dx, dy) / far;
+                    let ch = SPIRAL_CH[((v * 3.99) as usize).min(3)];
+                    let col = scale(gradient(&c.pal, near + t * 0.05), (0.2 + 0.6 * v) * (0.35 + 0.65 * near) * fade);
+                    c.g.put(gx, gy, ch, col);
+                }
+            }
+        }
+        let reach = dist(c.art.w as f32 / 2.0, c.art.h as f32 / 2.0).max(1.0);
+        let period = TAU / SPIRAL_SPIN;
+        for &(x, y, ch) in &c.art.cells {
+            let (tx, ty) = target(c, x, y);
+            let (dx, dy) = (tx + 0.5 - cx, ty + 0.5 - cy);
+            // De fuera hacia dentro, cada letra espera a que un brazo pase por encima.
+            let from = SPIRAL_REVEAL + SPIRAL_REVEAL_DUR * (1.0 - dist(dx, dy) / reach).max(0.0);
+            let phi = self.phase(dx, dy).rem_euclid(TAU);
+            let first = (if self.dir > 0.0 { phi } else { (TAU - phi).rem_euclid(TAU) }) / SPIRAL_SPIN;
+            let hit = first + ((from - first) / period).ceil().max(0.0) * period;
+            if t < hit {
+                continue;
+            }
+            let col = shine(flash(settle(&c.pal, &c.art, x, y, t), t - hit, 0.5), &c.art, x, y, t, 9.0, 10.8);
+            c.g.put(tx as i32, ty as i32, ch, col);
         }
     }
 }
