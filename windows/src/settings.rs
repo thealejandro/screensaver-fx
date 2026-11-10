@@ -41,8 +41,13 @@ const ID_LBL_SUBTITLE: i32 = 121;
 const ID_LBL_AFTER: i32 = 122;
 const ID_LBL_MINUTES: i32 = 123;
 const ID_UPDATE: i32 = 124;
+const ID_SCREENS: i32 = 125;
+const ID_IDENTIFY: i32 = 126;
 
 const TIMER_PREVIEW: usize = 1;
+const TIMER_IDENTIFY: usize = 2;
+/// Cuánto se ven los números de «Identificar pantallas».
+const IDENTIFY_MS: u32 = 3000;
 /// Resultado del hilo que busca o descarga actualizaciones (LPARAM: `Box<Done>`).
 const WM_UPDATE_DONE: u32 = WM_APP + 1;
 /// Botón de actualizaciones en la cabecera.
@@ -54,11 +59,12 @@ const PREVIEW_DELAY_MS: u32 = 350;
 const BANNERS: [&str; 3] = ["default", "text", "file"];
 const SIZES: [&str; 3] = ["s", "m", "l"];
 const LANGS: [&str; 3] = ["auto", "es", "en"];
+const SCREENS: [&str; 3] = ["span", "each", "main"];
 const DESKTOP: &str = "Control Panel\\Desktop";
 
 // Medidas en píxeles lógicos (96 ppp).
 const W: i32 = 780;
-const H: i32 = 560;
+const H: i32 = 622;
 const PAD: i32 = 24;
 const GAP: i32 = 12;
 /// Margen interior de las tarjetas.
@@ -69,7 +75,7 @@ const CTL_H: i32 = 32;
 const LABEL_H: i32 = 20;
 const STEP: i32 = 62;
 const CARD_Y: i32 = 84;
-const CARD_H: i32 = CP + 4 * STEP + LABEL_H + CTL_H + CP;
+const CARD_H: i32 = CP + 5 * STEP + LABEL_H + CTL_H + CP;
 const LEFT_W: i32 = 340;
 const RIGHT_X: i32 = PAD + LEFT_W + GAP;
 const RIGHT_W: i32 = W - PAD - RIGHT_X;
@@ -426,7 +432,7 @@ unsafe fn build_ini(hwnd: HWND) -> String {
     // La letra del rótulo aún no tiene control en esta ventana: se conserva la de config.ini.
     let font = read_map().get("font").cloned().unwrap_or_else(|| "block".to_string());
     format!(
-        "# Screensaver FX\nbanner={}\ntitle={}\nsubtitle={}\ntheme={}\nsize={}\neffects={}\nlang={}\nfont={font}\n",
+        "# Screensaver FX\nbanner={}\ntitle={}\nsubtitle={}\ntheme={}\nsize={}\neffects={}\nlang={}\nscreens={}\nfont={font}\n",
         BANNERS[combo_sel(hwnd, ID_BANNER).min(2)],
         text_of(hwnd, ID_TITLE),
         text_of(hwnd, ID_SUBTITLE),
@@ -434,6 +440,7 @@ unsafe fn build_ini(hwnd: HWND) -> String {
         SIZES[combo_sel(hwnd, ID_SIZE).min(2)],
         effects[combo_sel(hwnd, ID_EFFECTS).min(effects.len() - 1)],
         LANGS[combo_sel(hwnd, ID_LANG).min(2)],
+        SCREENS[combo_sel(hwnd, ID_SCREENS).min(2)],
     )
 }
 
@@ -827,6 +834,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             restart_preview(hwnd);
             return 0;
         }
+        WM_TIMER if wp == TIMER_IDENTIFY => {
+            KillTimer(hwnd, TIMER_IDENTIFY);
+            close_identify();
+            return 0;
+        }
         WM_COMMAND => {
             let (id, code) = ((wp & 0xFFFF) as i32, (wp >> 16 & 0xFFFF) as u32);
             match id {
@@ -834,7 +846,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_TITLE | ID_SUBTITLE | ID_MINUTES if code == EN_SETFOCUS || code == EN_KILLFOCUS => {
                     InvalidateRect(hwnd, core::ptr::null(), FALSE);
                 }
-                ID_BANNER | ID_THEME | ID_SIZE | ID_EFFECTS | ID_LANG => {
+                ID_BANNER | ID_THEME | ID_SIZE | ID_EFFECTS | ID_LANG | ID_SCREENS => {
                     InvalidateRect(lp as HWND, core::ptr::null(), FALSE);
                 }
                 _ => {}
@@ -845,6 +857,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     true
                 }
                 ID_TITLE | ID_SUBTITLE if code == EN_CHANGE => true,
+                // No cambia la vista previa (es una sola pantalla): solo hay algo que guardar.
+                ID_SCREENS if code == CBN_SELCHANGE => {
+                    mark_dirty(hwnd);
+                    false
+                }
+                ID_IDENTIFY => {
+                    identify(hwnd);
+                    false
+                }
                 // BN_CLICKED del interruptor o STN_CLICKED de su texto.
                 ID_ACTIVATE | ID_ACTIVATE_LABEL if code == 0 => {
                     ACTIVE.set(!ACTIVE.get());
@@ -902,7 +923,119 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_DESTROY => {
             stop_preview();
+            close_identify();
             PostQuitMessage(0);
+            return 0;
+        }
+        _ => {}
+    }
+    DefWindowProcW(hwnd, msg, wp, lp)
+}
+
+// --- Identificar pantallas ------------------------------------------------------------------
+
+/// Una ventana con el número de cada pantalla, como en Configuración › Pantalla, pero con el
+/// orden en que la recorren los efectos de escritorio (el que usa `Desk`).
+struct Badge {
+    hwnd: HWND,
+    num: Vec<u16>,
+    info: Vec<u16>,
+}
+
+thread_local! {
+    static BADGES: RefCell<Vec<Badge>> = const { RefCell::new(Vec::new()) };
+    static BADGE_FONT: Cell<HFONT> = const { Cell::new(core::ptr::null_mut()) };
+}
+
+unsafe extern "system" fn monitor_proc(_: HMONITOR, _: HDC, rc: *mut RECT, data: LPARAM) -> BOOL {
+    (*(data as *mut Vec<RECT>)).push(*rc);
+    TRUE
+}
+
+/// Monitores de izquierda a derecha por su centro y, si coinciden, de arriba abajo.
+fn monitors() -> Vec<RECT> {
+    let mut v: Vec<RECT> = Vec::new();
+    unsafe { EnumDisplayMonitors(core::ptr::null_mut(), core::ptr::null(), Some(monitor_proc), &mut v as *mut _ as LPARAM) };
+    v.sort_by_key(|r| (r.left + r.right, r.top + r.bottom));
+    v
+}
+
+unsafe fn close_identify() {
+    for b in BADGES.with(|v| v.take()) {
+        DestroyWindow(b.hwnd);
+    }
+    let f = BADGE_FONT.with(|f| f.replace(core::ptr::null_mut()));
+    if !f.is_null() {
+        DeleteObject(f);
+    }
+}
+
+unsafe fn identify(owner: HWND) {
+    close_identify();
+    let Some(s) = with_ui(|u| u.s) else { return };
+    let hinst = GetModuleHandleW(core::ptr::null());
+    let class = wide("ScreensaverFXBadge");
+    let wc = WNDCLASSEXW {
+        cbSize: core::mem::size_of::<WNDCLASSEXW>() as u32,
+        lpfnWndProc: Some(badge_proc),
+        hInstance: hinst,
+        hCursor: LoadCursorW(core::ptr::null_mut(), IDC_ARROW),
+        lpszClassName: class.as_ptr(),
+        ..core::mem::zeroed()
+    };
+    RegisterClassExW(&wc);
+    BADGE_FONT.with(|f| f.set(make_font(owner, (110.0 * s) as i32, FW_SEMIBOLD, "Segoe UI Variable Display")));
+    let (bw, bh) = ((220.0 * s) as i32, (220.0 * s) as i32);
+    for (i, r) in monitors().iter().enumerate() {
+        let main = r.left == 0 && r.top == 0;
+        let size = format!("{} × {}", r.right - r.left, r.bottom - r.top);
+        let info = if main { format!("{}  ·  {size}", tr("Principal", "Main")) } else { size };
+        // Abajo a la izquierda, como Windows, para no tapar el configurador.
+        let (x, y) = (r.left + (40.0 * s) as i32, r.bottom - bh - (90.0 * s) as i32);
+        let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class.as_ptr(), class.as_ptr(), WS_POPUP, x, y, bw, bh, owner, core::ptr::null_mut(), hinst, core::ptr::null());
+        if hwnd.is_null() {
+            continue;
+        }
+        // Esquinas redondas en Windows 11 (en Windows 10 no hace nada).
+        let round: u32 = 2;
+        DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &round as *const _ as *const _, 4);
+        BADGES.with(|v| v.borrow_mut().push(Badge { hwnd, num: wide(&(i + 1).to_string()), info: wide(&info) }));
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+    SetTimer(owner, TIMER_IDENTIFY, IDENTIFY_MS, None);
+}
+
+unsafe extern "system" fn badge_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    match msg {
+        WM_PAINT => {
+            let mut ps: PAINTSTRUCT = core::mem::zeroed();
+            let hdc = BeginPaint(hwnd, &mut ps);
+            let mut rc: RECT = core::mem::zeroed();
+            GetClientRect(hwnd, &mut rc);
+            let texts = BADGES.with(|v| v.borrow().iter().find(|b| b.hwnd == hwnd).map(|b| (b.num.clone(), b.info.clone())));
+            with_ui(|u| {
+                buffered(hdc, &rc, |dc| {
+                    solid(dc, &rc, u.pal.card);
+                    // Borde de acento, como la pantalla seleccionada en Configuración.
+                    let k = u.px(3).max(2);
+                    for (l, t, r, b) in [(0, 0, rc.right, k), (0, rc.bottom - k, rc.right, rc.bottom), (0, 0, k, rc.bottom), (rc.right - k, 0, rc.right, rc.bottom)] {
+                        solid(dc, &RECT { left: l, top: t, right: r, bottom: b }, u.accent);
+                    }
+                    if let Some((num, info)) = &texts {
+                        let big = RECT { left: 0, top: 0, right: rc.right, bottom: rc.bottom - u.px(44) };
+                        draw_text(dc, BADGE_FONT.with(|f| f.get()), u.pal.text, num, &big, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                        let low = RECT { left: 0, top: rc.bottom - u.px(56), right: rc.right, bottom: rc.bottom - u.px(20) };
+                        draw_text(dc, u.font, u.pal.dim, info, &low, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    }
+                })
+            });
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        WM_ERASEBKGND => return 1,
+        // Un clic en cualquiera las cierra todas.
+        WM_LBUTTONDOWN => {
+            close_identify();
             return 0;
         }
         _ => {}
@@ -1187,6 +1320,14 @@ pub fn run(owner: Option<HWND>) {
         b.combo(ID_SIZE, rx, y + LABEL_H, half, &[tr("Pequeño", "Small"), tr("Mediano", "Medium"), tr("Grande", "Large")].map(String::from), pos(&SIZES, "size", 1));
         b.label(-1, tr("Idioma del reloj", "Clock language"), rx + half + GAP, y, half);
         b.combo(ID_LANG, rx + half + GAP, y + LABEL_H, half, &[tr("Del sistema", "System"), "Español", "English"].map(String::from), pos(&LANGS, "lang", 0));
+
+        // Última fila: cómo se reparten las pantallas y, al lado, qué número tiene cada una.
+        y += STEP;
+        b.label(-1, tr("Varias pantallas", "Multiple screens"), x, y, w);
+        let modes = [tr("Un escritorio: los efectos cruzan", "One desktop: effects cross over"), tr("Cada pantalla por su cuenta", "Each screen on its own"), tr("Solo la principal (resto en negro)", "Main screen only (rest black)")];
+        b.combo(ID_SCREENS, x, y + LABEL_H, w, &modes.map(String::from), pos(&SCREENS, "screens", 0));
+        b.label(-1, tr("Orden: el de Configuración › Pantalla", "Order: as in Settings › Display"), rx, y, rw);
+        b.button(ID_IDENTIFY, tr("Identificar pantallas", "Identify screens"), rx, y + LABEL_H, half, CTL_H);
 
         // Tarjeta inferior: usarlo como protector del sistema. A la izquierda el texto (que también
         // conmuta); a la derecha «tras N minutos» y el interruptor.

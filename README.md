@@ -54,6 +54,14 @@ Todos los monitores van sincronizados: el mismo efecto y el mismo tema a la vez 
 
 Con un solo monitor también funcionan, dentro de esa pantalla.
 
+El orden de las pantallas es el de **Configuración › Pantalla** en Windows (o **Ajustes del Sistema › Pantallas** en macOS), según cómo estén colocadas, no el número que les da el sistema. En el configurador de Windows, **Identificar pantallas** muestra en cada una su número en ese orden y cuál es la principal. En **Varias pantallas** se elige cómo se reparten (`screens=` en `config.ini`):
+
+| Opción | `screens=` | Qué hace |
+|---|---|---|
+| Un escritorio: los efectos cruzan | `span` (por defecto) | Lo de arriba: todas sincronizadas y los efectos de escritorio pasan de una a otra. |
+| Cada pantalla por su cuenta | `each` | Cada pantalla con su propio orden de efectos y colores, sin cruzar. |
+| Solo la principal | `main` | Anima solo la pantalla principal; las demás quedan en negro. |
+
 ## Compilar
 
 ### macOS

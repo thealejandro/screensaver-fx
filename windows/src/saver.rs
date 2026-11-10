@@ -246,6 +246,10 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             }
             None => {
                 EnumDisplayMonitors(core::ptr::null_mut(), core::ptr::null(), Some(monitor_proc), &mut rects as *mut _ as LPARAM);
+                // La principal (la que empieza en 0,0) va primero: es la que anima con screens=main.
+                if let Some(i) = rects.iter().position(|r| r.left == 0 && r.top == 0) {
+                    rects[..=i].rotate_right(1);
+                }
             }
         }
 

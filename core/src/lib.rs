@@ -12,7 +12,7 @@ pub mod grid;
 pub mod raster;
 pub mod rng;
 
-pub use config::{Banner, Config, Font, Lang, Size, ThemeSel};
+pub use config::{Banner, Config, Font, Lang, Screens, Size, ThemeSel};
 
 use art::Art;
 use color::{accent_palette, THEMES};
@@ -127,6 +127,8 @@ pub struct Engine {
     /// Sorteo de efecto y tema: depende solo de la semilla, igual en todos los monitores.
     seq: Rng,
     cycle: u64,
+    /// Pantalla que no anima (`screens=main` y no es la principal): se queda en negro.
+    blank: bool,
 }
 
 const FIRST_GAP: f64 = 0.15;
@@ -142,7 +144,19 @@ impl Engine {
     /// Un motor por monitor: `screens` es el escritorio entero y `me` el monitor de este motor.
     /// Con la misma configuración (y semilla) y el mismo `t` en `tick`, todos los motores muestran
     /// el mismo efecto a la vez y los efectos de escritorio pasan de una pantalla a otra.
-    pub fn with_desk(screens: &[Screen], me: usize, cfg: Config) -> Engine {
+    /// La principal es `screens[0]`; `cfg.screens` decide si se usa el escritorio entero.
+    pub fn with_desk(screens: &[Screen], me: usize, mut cfg: Config) -> Engine {
+        let mine = [screens.get(me).copied().unwrap_or(Screen::px(1, 1))];
+        let (screens, me, blank) = match cfg.screens {
+            _ if screens.len() < 2 || me >= screens.len() => (screens, me, false),
+            Screens::Span => (screens, me, false),
+            Screens::Each => {
+                // Cada pantalla con su propia semilla: otro orden de efectos y de colores.
+                cfg.seed ^= (me as u64 + 1).wrapping_mul(0xD6E8_FEB8_6659_FD93);
+                (&mine[..], 0, false)
+            }
+            Screens::Main => (&mine[..], 0, me != 0),
+        };
         let art = match cfg.banner {
             Banner::Default => None,
             Banner::Text => Art::from_text_with(&cfg.title, &cfg.subtitle, cfg.font),
@@ -179,6 +193,7 @@ impl Engine {
             last_t: 0.0,
             seq,
             cycle: 0,
+            blank,
         }
     }
 
@@ -235,8 +250,9 @@ impl Engine {
     /// Avanza la animación a `t` segundos (monótono, desde el inicio). Devuelve true si cambió
     /// algún píxel: si es false la plataforma puede saltarse el dibujado.
     pub fn tick(&mut self, t: f64, now: WallTime) -> bool {
-        if !t.is_finite() {
-            // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora.
+        if !t.is_finite() || self.blank {
+            // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora. Una
+            // pantalla en negro no dibuja nunca.
             self.raster.dirty = None;
             return false;
         }
