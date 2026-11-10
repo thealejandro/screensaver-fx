@@ -3,6 +3,7 @@
 
 use crate::sys;
 use ssfx_core::color::Rgb;
+use ssfx_core::desk::Screen;
 use ssfx_core::{Config, Engine};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
@@ -235,6 +236,15 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
         }
 
         let (ini, art, accent, es, seed) = (sys::read_ini(), sys::read_art(), Rgb::hex(sys::accent()), sys::system_is_spanish(), sys::seed());
+        // Todos los monitores forman un solo escritorio con la misma semilla y el mismo reloj: van
+        // sincronizados y los efectos de escritorio pasan de una pantalla a la siguiente.
+        let screens: Vec<Screen> = rects
+            .iter()
+            .map(|r| {
+                let (w, h) = (r.right - r.left, r.bottom - r.top);
+                Screen { x: r.left as f64, y: r.top as f64, w: w as f64, h: h as f64, px_w: w, px_h: h }
+            })
+            .collect();
         for (i, rc) in rects.iter().enumerate() {
             let (w, h) = (rc.right - rc.left, rc.bottom - rc.top);
             if w <= 0 || h <= 0 {
@@ -266,10 +276,9 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             if hwnd.is_null() {
                 continue;
             }
-            // Cada monitor con su propia semilla: no repiten el mismo efecto a la vez.
-            let mut cfg = Config::parse(&ini, accent, seed.wrapping_add(i as u64 * 0x9E37_79B9_7F4A_7C15), es);
+            let mut cfg = Config::parse(&ini, accent, seed, es);
             cfg.art = art.clone();
-            let engine = Engine::new(w, h, cfg);
+            let engine = Engine::with_desk(&screens, i, cfg);
             SAVERS.with(|v| v.borrow_mut().push(Saver { hwnd, hdc: GetDC(hwnd), engine }));
         }
         let first = SAVERS.with(|v| v.borrow().first().map(|s| s.hwnd));
