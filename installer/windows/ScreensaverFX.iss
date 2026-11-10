@@ -245,7 +245,7 @@ end;
 procedure LoadConfig;
 var
   Lines: TArrayOfString;
-  I, P: Integer;
+  I, P, K: Integer;
   L: String;
 begin
   CfgKeys := TStringList.Create;
@@ -259,8 +259,15 @@ begin
       P := Pos('=', L);
       if (P > 1) and (Copy(Trim(L), 1, 1) <> '#') then
       begin
-        CfgKeys.Add(Lowercase(Trim(Copy(L, 1, P - 1))));
-        CfgVals.Add(Trim(Copy(L, P + 1, MaxInt)));
+        { Clave repetida: gana la última, como en el protector (core/src/config.rs). }
+        K := CfgKeys.IndexOf(Lowercase(Trim(Copy(L, 1, P - 1))));
+        if K >= 0 then
+          CfgVals[K] := Trim(Copy(L, P + 1, MaxInt))
+        else
+        begin
+          CfgKeys.Add(Lowercase(Trim(Copy(L, 1, P - 1))));
+          CfgVals.Add(Trim(Copy(L, P + 1, MaxInt)));
+        end;
       end;
     end;
 end;
