@@ -83,7 +83,7 @@ Argumentos del `.scr`: `/s` pantalla completa, `/p <hwnd>` vista previa, `/c` co
 git tag v0.1.0 && git push --tags
 ```
 
-GitHub Actions compila Windows (x64 + ARM64) y macOS (universal) y sube los instaladores a Releases.
+GitHub Actions compila Windows (x64 + ARM64) y macOS (universal) y sube los instaladores a Releases, con una tabla de qué descargar según el equipo y los cambios `feat`/`fix`/`perf` desde la versión anterior (`.github/release-notes.sh`).
 
 ## Herramientas
 
