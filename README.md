@@ -1,6 +1,6 @@
 # Screensaver FX
 
-Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las animaciones del screensaver de Omarchy y 10 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino. No usa ningún motor web y ocupa unos 5 MB de RAM.
+Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las animaciones del screensaver de Omarchy y 13 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino. No usa ningún motor web y ocupa unos 5 MB de RAM.
 
 ## Instalar
 
@@ -44,6 +44,16 @@ El instalador no está firmado, así que SmartScreen puede avisar: «Más inform
 
 Ni el .pkg ni el .dmg están notarizados. Si macOS bloquea el instalador o el protector, ve a Ajustes del Sistema › Privacidad y seguridad › «Abrir igualmente». Con el método de la terminal no aparece el aviso.
 
+## Varios monitores
+
+Todos los monitores van sincronizados: el mismo efecto y el mismo tema a la vez en cada pantalla. Tres efectos usan el escritorio entero y pasan de un monitor al siguiente, de izquierda a derecha, con cualquier número de pantallas y aunque tengan tamaños, escalas u orientaciones distintas:
+
+- **Relevo:** las letras del rótulo saltan en arco de una pantalla a la siguiente y al final se encienden en todas.
+- **Cometa:** un cometa cruza el escritorio, ilumina el rótulo de cada pantalla al pasar y deja una estela de chispas.
+- **Marea:** una ola de color recorre todos los monitores, va encendiendo los rótulos y vuelve.
+
+Con un solo monitor también funcionan, dentro de esa pantalla.
+
 ## Compilar
 
 ### macOS
@@ -80,4 +90,5 @@ GitHub Actions compila Windows (x64 + ARM64) y macOS (universal) y sube los inst
 ```bash
 cargo run -p ssfx-core --example snap --release -- snaps auto 1920 1080 "banner=text|title=Hola"   # fotogramas a PNG
 cargo run -p ssfx-core --example brand --release -- installer/assets                              # icono e imágenes
+cargo run -p ssfx-core --example desk --release -- desk relay,comet,tide 8                          # escritorio de 3 monitores a PNG
 ```
