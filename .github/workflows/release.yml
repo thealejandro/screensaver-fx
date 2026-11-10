@@ -135,8 +135,11 @@ jobs:
           ! ldd "$BIN" 2>/dev/null | grep -q '=>' || { echo "::error::el binario no es estático"; exit 1; }
           [ "$("$BIN" --list | wc -l)" -ge 22 ]
           "$BIN" --banner "QA" "linux" --font shadow | grep -q '█'
+          # 2,2 s: el núcleo garantiza (y prueba) que todo efecto ha pintado algo a los 2 s; con
+          # menos, los que arrancan con retardo al azar (beams) pueden no haber empezado.
+          export SCREENSAVER_FX_SEED=qa
           for fx in $("$BIN" --list); do
-            script -qec "stty cols 120 rows 40; '$BIN' $fx --seconds 0.5" /dev/null > "$RUNNER_TEMP/out.raw" || { echo "::error::falla el efecto $fx"; exit 1; }
+            script -qec "stty cols 120 rows 40; '$BIN' $fx --seconds 2.2" /dev/null > "$RUNNER_TEMP/out.raw" || { echo "::error::falla el efecto $fx"; exit 1; }
             grep -q '38;2;' "$RUNNER_TEMP/out.raw" || { echo "::error::el efecto $fx no pinta nada"; exit 1; }
           done
           for f in linux/install.sh linux/uninstall.sh linux/omarchy/bin/ttfx linux/omarchy/bin/omarchy-screensaver linux/omarchy/screensaver-check.sh; do bash -n "$f"; done
