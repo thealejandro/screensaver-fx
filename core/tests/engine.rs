@@ -238,8 +238,8 @@ fn effects_rotate_without_immediate_repeats() {
         let mut order: Vec<&str> = Vec::new();
         let mut was_gap = true;
         let mut t = 0.0;
-        // 30 minutos a 10 fps (dt grande, como un equipo lento).
-        for _ in 0..18_000 {
+        // 60 minutos a 10 fps (dt grande, como un equipo lento): con tantos efectos, en 30 alguno podía no salir.
+        for _ in 0..36_000 {
             t += 0.1;
             e.tick(t, NOW);
             match e.current_effect() {
@@ -251,7 +251,7 @@ fn effects_rotate_without_immediate_repeats() {
                 None => was_gap = true,
             }
         }
-        assert!(order.len() >= 90, "{ini}: solo {} efectos en 30 min", order.len());
+        assert!(order.len() >= 90, "{ini}: solo {} efectos en 60 min", order.len());
         assert!(order.iter().all(|id| allowed.contains(id)), "{ini}: efecto no seleccionado");
         assert!(order.windows(2).all(|w| w[0] != w[1]), "{ini}: efecto repetido seguido: {order:?}");
         let mut distinct = order.clone();
