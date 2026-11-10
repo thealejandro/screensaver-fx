@@ -47,6 +47,10 @@ jobs:
       - name: Pruebas
         run: cargo test -p ssfx-core -p screensaver-fx --release --target x86_64-pc-windows-gnullvm
 
+      # Coste por cuadro de cada efecto (#4): falla si alguno pasa de 4 ms en el p99 (hoy ~0,2 ms).
+      - name: Rendimiento
+        run: cargo run -p ssfx-core --example bench --release --target x86_64-pc-windows-gnullvm -- 4
+
       # Solo DLL que trae Windows: una de llvm-mingw (libunwind.dll) solo existe en la máquina que compila.
       - name: Dependencias del sistema
         run: |
@@ -90,6 +94,9 @@ jobs:
 
       - name: Pruebas
         run: cargo test -p ssfx-core --release
+
+      - name: Rendimiento
+        run: cargo run -p ssfx-core --example bench --release -- 4
 
       - name: Compilar y empaquetar
         run: ./macos/package.sh
