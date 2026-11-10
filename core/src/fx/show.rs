@@ -2,7 +2,7 @@
 
 use super::extra::{art_center, dist, smooth};
 use super::{clamp01, ease_out_cubic, flash, settle, shine, Ctx, Effect};
-use crate::color::{gradient, mix, scale, WHITE};
+use crate::color::{gradient, mix, scale, Rgb, WHITE};
 use crate::rng::hf;
 use core::f32::consts::{FRAC_PI_4, TAU};
 
@@ -234,17 +234,38 @@ const BLIPS: u32 = 7;
 struct Radar {
     seed: u32,
     dir: f32,
+    /// Por celda, lo que no cambia entre cuadros: ángulo, distancia, color y si es anillo o cruz.
+    cells: Vec<(f32, f32, Rgb, bool)>,
+    /// Tamaño de rejilla para el que se calculó `cells`.
+    size: (i32, i32),
 }
 
 pub fn radar(c: &mut Ctx) -> Box<dyn Effect> {
     let dir = if c.rng.chance(0.5) { 1.0 } else { -1.0 };
-    Box::new(Radar { seed: c.rng.next_u64() as u32, dir })
+    Box::new(Radar { seed: c.rng.next_u64() as u32, dir, cells: Vec::new(), size: (-1, -1) })
 }
 
 impl Radar {
     /// Radianes desde que el haz pasó por el ángulo `a` por última vez.
     fn behind(&self, a: f32, t: f32) -> f32 {
         ((self.dir * SWEEP * (t - RADAR_ON) - a) * self.dir).rem_euclid(TAU)
+    }
+
+    fn prepare(&mut self, c: &Ctx, cx: f32, cy: f32, far: f32) {
+        let (cols, rows) = (c.g.cols, c.g.rows);
+        if self.size == (cols, rows) {
+            return;
+        }
+        self.size = (cols, rows);
+        self.cells.clear();
+        for gy in 0..rows {
+            for gx in 0..cols {
+                let (dx, dy) = (gx as f32 + 0.5 - cx, gy as f32 + 0.5 - cy);
+                let d = dist(dx, dy);
+                let ring = (d % RING_EVERY) < 0.7 || dx.abs() < 0.5 || dy.abs() < 0.5;
+                self.cells.push(((dy * 2.0).atan2(dx), d, gradient(&c.pal, 0.3 + 0.4 * d / far), ring));
+            }
+        }
     }
 }
 
@@ -254,20 +275,18 @@ impl Effect for Radar {
         let fade = clamp01(t / 0.6) * (1.0 - smooth((t - 8.0) / 2.0));
         let far = dist(c.g.cols as f32, c.g.rows as f32).max(1.0);
         if fade > 0.0 {
-            for gy in 0..c.g.rows {
-                for gx in 0..c.g.cols {
-                    let (dx, dy) = (gx as f32 + 0.5 - cx, gy as f32 + 0.5 - cy);
-                    let d = dist(dx, dy);
-                    let trail = if t >= RADAR_ON { 1.0 - self.behind((dy * 2.0).atan2(dx), t) / TRAIL } else { 0.0 };
-                    let col = gradient(&c.pal, 0.3 + 0.4 * d / far);
-                    if trail > 0.0 {
-                        let ch = if trail > 0.93 { '█' } else if trail > 0.6 { '▒' } else { '░' };
-                        let col = if trail > 0.93 { mix(col, WHITE, 0.5) } else { col };
-                        c.g.put(gx, gy, ch, scale(col, (0.06 + 0.45 * trail * trail * trail) * (1.0 - 0.5 * d / far) * fade));
-                    } else if (d % RING_EVERY) < 0.7 || dx.abs() < 0.5 || dy.abs() < 0.5 {
-                        // Anillos de distancia y la cruz del centro.
-                        c.g.put(gx, gy, '·', scale(col, 0.35 * fade));
-                    }
+            self.prepare(c, cx, cy, far);
+            let cols = c.g.cols.max(1);
+            for (i, &(a, d, col, ring)) in self.cells.iter().enumerate() {
+                let (gx, gy) = (i as i32 % cols, i as i32 / cols);
+                let trail = if t >= RADAR_ON { 1.0 - self.behind(a, t) / TRAIL } else { 0.0 };
+                if trail > 0.0 {
+                    let ch = if trail > 0.93 { '█' } else if trail > 0.6 { '▒' } else { '░' };
+                    let col = if trail > 0.93 { mix(col, WHITE, 0.5) } else { col };
+                    c.g.put(gx, gy, ch, scale(col, (0.06 + 0.45 * trail * trail * trail) * (1.0 - 0.5 * d / far) * fade));
+                } else if ring {
+                    // Anillos de distancia y la cruz del centro.
+                    c.g.put(gx, gy, '·', scale(col, 0.35 * fade));
                 }
             }
             // Contactos sueltos que se encienden al paso del haz y se apagan durante la vuelta.

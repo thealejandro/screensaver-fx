@@ -633,19 +633,38 @@ struct Spiral {
     arms: f32,
     dir: f32,
     twist: f32,
+    /// Por celda, lo que no cambia entre cuadros: fase de la espiral y cercanía al centro.
+    cells: Vec<(f32, f32)>,
+    /// Tamaño de rejilla para el que se calculó `cells`.
+    size: (i32, i32),
 }
 
 pub fn spiral(c: &mut Ctx) -> Box<dyn Effect> {
     let arms = [2.0, 3.0, 4.0][c.rng.below(3)];
     let dir = if c.rng.chance(0.5) { 1.0 } else { -1.0 };
     let twist = c.rng.range(0.22, 0.34);
-    Box::new(Spiral { arms, dir, twist })
+    Box::new(Spiral { arms, dir, twist, cells: Vec::new(), size: (-1, -1) })
 }
 
 impl Spiral {
     /// Fase de la espiral en un punto relativo al centro: los brazos están donde vale 0.
     fn phase(&self, dx: f32, dy: f32) -> f32 {
         self.arms * (dy * 2.0).atan2(dx) + dist(dx, dy) * self.twist
+    }
+
+    fn prepare(&mut self, cols: i32, rows: i32, cx: f32, cy: f32) {
+        if self.size == (cols, rows) {
+            return;
+        }
+        self.size = (cols, rows);
+        let far = dist(cols as f32, rows as f32).max(1.0);
+        self.cells.clear();
+        for gy in 0..rows {
+            for gx in 0..cols {
+                let (dx, dy) = (gx as f32 + 0.5 - cx, gy as f32 + 0.5 - cy);
+                self.cells.push((self.phase(dx, dy), 1.0 - dist(dx, dy) / far));
+            }
+        }
     }
 }
 
@@ -654,19 +673,17 @@ impl Effect for Spiral {
         let (cx, cy) = art_center(c);
         let fade = clamp01(t / 0.8) * (1.0 - smooth((t - 6.5) / 2.0));
         if fade > 0.0 {
-            let far = dist(c.g.cols as f32, c.g.rows as f32).max(1.0);
-            for gy in 0..c.g.rows {
-                for gx in 0..c.g.cols {
-                    let (dx, dy) = (gx as f32 + 0.5 - cx, gy as f32 + 0.5 - cy);
-                    let v = clamp01(((self.phase(dx, dy) - self.dir * SPIRAL_SPIN * t).cos() - 0.55) / 0.45);
-                    if v <= 0.0 {
-                        continue;
-                    }
-                    let near = 1.0 - dist(dx, dy) / far;
-                    let ch = SPIRAL_CH[((v * 3.99) as usize).min(3)];
-                    let col = scale(gradient(&c.pal, near + t * 0.05), (0.2 + 0.6 * v) * (0.35 + 0.65 * near) * fade);
-                    c.g.put(gx, gy, ch, col);
+            self.prepare(c.g.cols, c.g.rows, cx, cy);
+            let cols = c.g.cols.max(1);
+            let spin = self.dir * SPIRAL_SPIN * t;
+            for (i, &(phase, near)) in self.cells.iter().enumerate() {
+                let v = clamp01(((phase - spin).cos() - 0.55) / 0.45);
+                if v <= 0.0 {
+                    continue;
                 }
+                let ch = SPIRAL_CH[((v * 3.99) as usize).min(3)];
+                let col = scale(gradient(&c.pal, near + t * 0.05), (0.2 + 0.6 * v) * (0.35 + 0.65 * near) * fade);
+                c.g.put(i as i32 % cols, i as i32 / cols, ch, col);
             }
         }
         let reach = dist(c.art.w as f32 / 2.0, c.art.h as f32 / 2.0).max(1.0);
