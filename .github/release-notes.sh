@@ -22,6 +22,7 @@ cat <<EOF
 | **macOS 11 o posterior** · recomendado | [**ScreensaverFX.dmg**]($DL/ScreensaverFX.dmg) | Ábrelo y arrastra el protector sobre «Screen Savers». |
 | macOS, con asistente | [ScreensaverFX.pkg]($DL/ScreensaverFX.pkg) | Doble clic y sigue los pasos. |
 | macOS, a mano | [ScreensaverFX-macOS.zip]($DL/ScreensaverFX-macOS.zip) | Descomprime y haz doble clic en \`ScreensaverFX.saver\`. |
+| **Linux con Omarchy** | Clona el repositorio | \`./linux/install.sh\` compila el binario o descarga el de abajo, ver el [README]($README). |
 
 ¿Windows o macOS avisan de que la app no está firmada? Mira cómo abrirla en el [README]($README).
 
@@ -29,6 +30,7 @@ cat <<EOF
 
 - \`ScreensaverFX-Setup-$VER.exe\`: el mismo instalador de Windows, con la versión en el nombre (lo usa el actualizador).
 - \`install.ps1\` / \`install.sh\`: instalación en una línea desde la terminal (Windows / macOS), ver el [README]($README).
+- \`screensaver-fx-linux-x86_64\` / \`screensaver-fx-linux-aarch64\`: binario de terminal para Linux, estático; lo descarga \`linux/install.sh\` cuando no hay Rust.
 - \`SHA256SUMS.txt\`: sumas SHA-256 para comprobar las descargas.
 
 </details>

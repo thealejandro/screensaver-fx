@@ -1,0 +1,38 @@
+#!/bin/bash
+# Envoltorio mínimo del salvapantallas de Omarchy. No copia su lógica: solo
+# espera a que el tamaño del pty sea definitivo y luego cede al script
+# original, así las actualizaciones de Omarchy se aplican solas.
+#
+# Por qué: el script del paquete solo espera mientras el pty mide "24 80", pero
+# en algunos equipos el tamaño provisional es otro (p. ej. 53x19) y ttfx medía
+# el canvas antes de pasar a pantalla completa, cortando el rótulo por la derecha.
+# Las animaciones propias van en el envoltorio ttfx (linux/omarchy/bin/ttfx).
+# https://github.com/thealejandro/screensaver-fx
+
+# Mensaje en el idioma de Omarchy: msg "texto en español" "text in English"
+msg() {
+  local l=
+  read -r l _ 2>/dev/null <"${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/language" || true
+  l=${l:-${LC_ALL:-${LC_TIME:-${LANG:-}}}}
+  l=${l,,}
+  if [[ ${l:0:2} == es ]]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+}
+
+deadline=$((SECONDS + 5))
+last=""
+while ((SECONDS < deadline)); do
+  size=$(stty size 2>/dev/null || true)
+  [[ -n $size && $size == "$last" && $size != "24 80" ]] && break
+  last=$size
+  sleep 0.1
+done
+
+# Script original: el siguiente omarchy-screensaver del PATH que no sea un envoltorio
+for candidate in "${OMARCHY_PATH:-/usr/share/omarchy}/bin/omarchy-screensaver" $(type -ap omarchy-screensaver); do
+  [[ -x $candidate ]] || continue
+  [[ $candidate == "$HOME"/* ]] && continue
+  exec "$candidate" "$@"
+done
+
+echo "$(msg "omarchy-screensaver: no se encuentra el script original de Omarchy" "omarchy-screensaver: the original Omarchy script was not found")" >&2
+exit 1
