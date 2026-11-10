@@ -4,6 +4,7 @@ mod classic;
 mod extra;
 mod modern;
 mod multi;
+mod particles;
 
 use crate::art::Art;
 use crate::desk::Desk;
@@ -61,7 +62,7 @@ macro_rules! fx {
     };
 }
 
-pub static EFFECTS: [FxDef; 25] = [
+pub static EFFECTS: [FxDef; 27] = [
     fx!(c"neon", c"Neón", c"Neon", 14.0, true, classic::neon),
     fx!(c"starfield", c"Estrellas", c"Starfield", 16.0, true, classic::starfield),
     fx!(c"terminal", c"Terminal", c"Terminal", 10.0, true, classic::terminal),
@@ -81,12 +82,14 @@ pub static EFFECTS: [FxDef; 25] = [
     fx!(c"relay", c"Relevo", c"Relay", 13.0, false, multi::relay),
     fx!(c"comet", c"Cometa", c"Comet", 12.0, false, multi::comet),
     fx!(c"tide", c"Marea", c"Tide", 12.0, false, multi::tide),
-    fx!(c"fireworks", c"Fuegos artificiales", c"Fireworks", 13.0, false, extra::fireworks),
-    fx!(c"vortex", c"Remolino", c"Vortex", 11.0, false, extra::vortex),
-    fx!(c"bounce", c"Rebote", c"Bounce", 10.0, false, extra::bounce),
-    fx!(c"laser", c"Láser", c"Laser", 10.5, false, extra::laser),
-    fx!(c"crystal", c"Cristal", c"Crystal", 11.0, false, extra::crystal),
-    fx!(c"ripple", c"Onda", c"Ripple", 11.0, false, extra::ripple),
+    fx!(c"vortex", c"Remolino", c"Vortex", 12.0, false, extra::vortex),
+    fx!(c"ripple", c"Gota", c"Ripple", 11.0, false, extra::ripple),
+    fx!(c"fireflies", c"Luciérnagas", c"Fireflies", 13.0, false, extra::fireflies),
+    fx!(c"aurora", c"Aurora", c"Aurora", 13.0, false, extra::aurora),
+    fx!(c"fireworks", c"Fuegos artificiales", c"Fireworks", 13.0, false, particles::fireworks),
+    fx!(c"bounce", c"Rebote", c"Bounce", 10.0, false, particles::bounce),
+    fx!(c"laser", c"Láser", c"Laser", 10.5, false, particles::laser),
+    fx!(c"crystal", c"Cristal", c"Crystal", 11.0, false, particles::crystal),
 ];
 
 pub fn fx_index(id: &str) -> Option<usize> {
@@ -341,7 +344,7 @@ mod tests {
 
     #[test]
     fn random_effects_depend_on_the_seed() {
-        for id in ["neon", "starfield", "decrypt", "rain", "scatter", "matrix", "burn"] {
+        for id in ["neon", "starfield", "decrypt", "rain", "scatter", "matrix", "burn", "vortex", "fireflies", "aurora"] {
             let def = &EFFECTS[fx_index(id).unwrap()];
             let frame = |seed| {
                 let mut c = ctx(90, 30, Art::default_art(), seed);
