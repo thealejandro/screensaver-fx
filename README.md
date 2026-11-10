@@ -34,14 +34,15 @@ El instalador no está firmado, así que SmartScreen puede avisar: «Más inform
 
 ### macOS 11 o posterior
 
-- **Instalador:** descarga `ScreensaverFX.pkg` de [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest).
+- **Arrastrar:** abre `ScreensaverFX.dmg` de [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest) y arrastra el protector sobre «Screen Savers» (Finder pide tu contraseña porque se instala para todos los usuarios).
+- **Instalador:** `ScreensaverFX.pkg`, de la misma página.
 - **Terminal:**
 
   ```bash
   curl -fsSL https://raw.githubusercontent.com/thealejandro/screensaver-fx/main/install.sh | bash
   ```
 
-El paquete no está notarizado. Si macOS lo bloquea, ve a Ajustes del Sistema › Privacidad y seguridad › «Abrir igualmente». Con el método de la terminal no aparece el aviso.
+Ni el .pkg ni el .dmg están notarizados. Si macOS bloquea el instalador o el protector, ve a Ajustes del Sistema › Privacidad y seguridad › «Abrir igualmente». Con el método de la terminal no aparece el aviso.
 
 ## Compilar
 
@@ -51,7 +52,7 @@ Requisitos: [rustup](https://rustup.rs) y las Command Line Tools (`xcode-select 
 
 ```bash
 ./macos/build.sh --install     # compila e instala en ~/Library/Screen Savers
-./macos/package.sh             # dist/ScreensaverFX-macOS.zip y dist/ScreensaverFX-<versión>.pkg
+./macos/package.sh             # dist/ScreensaverFX-macOS.zip, ScreensaverFX-<versión>.pkg y .dmg
 ```
 
 ### Windows
