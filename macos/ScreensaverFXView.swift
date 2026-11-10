@@ -33,6 +33,50 @@ enum Settings {
 
 var systemIsSpanish: Bool { Locale.preferredLanguages.first?.hasPrefix("es") ?? false }
 
+/// Semilla y reloj comunes a todas las pantallas. macOS crea una vista por pantalla (a veces en
+/// procesos distintos); con la misma semilla y el mismo origen de tiempo cada motor calcula lo
+/// mismo y los efectos pasan de una pantalla a otra sin hablar entre sí. CACurrentMediaTime es el
+/// mismo reloj en todo el sistema.
+enum Session {
+    private static var seed: UInt64 = 0
+    private static var start: Double = 0
+    private static var lastSeen: Double = -.infinity
+    private static var file: URL { URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ssfx-session") }
+
+    /// La sesión en curso, o una nueva si ninguna pantalla la usó en los últimos segundos.
+    static func current() -> (seed: UInt64, start: Double) {
+        let now = CACurrentMediaTime()
+        if now - lastSeen < 5 { return (seed, start) }
+        // Otro proceso pudo empezarla hace un momento.
+        if let s = try? String(contentsOf: file, encoding: .utf8) {
+            let p = s.split(separator: " ")
+            if p.count == 2, let sd = UInt64(p[0]), let st = Double(p[1]), now - st >= 0, now - st < 5 {
+                (seed, start, lastSeen) = (sd, st, now)
+                return (seed, start)
+            }
+        }
+        (seed, start, lastSeen) = (UInt64.random(in: 0...UInt64.max), now, now)
+        try? "\(seed) \(start)".write(to: file, atomically: true, encoding: .utf8)
+        return (seed, start)
+    }
+
+    /// Mantiene viva la sesión mientras alguna pantalla anima.
+    static func touch() { lastSeen = CACurrentMediaTime() }
+
+    /// Todas las pantallas en puntos con y hacia abajo y su tamaño en píxeles; `me` es `mine`.
+    static func desk(mine: NSScreen?, px: CGSize) -> (screens: [SsfxScreen], me: Int)? {
+        let all = NSScreen.screens
+        guard let mine = mine, let me = all.firstIndex(of: mine) else { return nil }
+        let top = all.map { $0.frame.maxY }.max() ?? 0
+        let screens = all.enumerated().map { i, s -> SsfxScreen in
+            let f = s.frame, k = s.backingScaleFactor
+            let (pw, ph) = i == me ? (px.width, px.height) : ((f.width * k).rounded(), (f.height * k).rounded())
+            return SsfxScreen(x: f.minX, y: top - f.maxY, w: f.width, h: f.height, px_w: Int32(pw), px_h: Int32(ph))
+        }
+        return (screens, me)
+    }
+}
+
 @objc(ScreensaverFXView)
 final class ScreensaverFXView: ScreenSaverView {
     private var engine: OpaquePointer?
@@ -82,14 +126,22 @@ final class ScreensaverFXView: ScreenSaverView {
         let ini = Settings.ini()
         let banner = Settings.get("banner", "default")
         let art = banner == "file" ? Settings.art : nil
-        engine = ini.withCString { iniPtr in
-            if let art = art {
-                return art.withCString { ssfx_new(Int32(px.width), Int32(px.height), iniPtr, $0, accent(), UInt64.random(in: 0...UInt64.max), systemIsSpanish ? 1 : 0) }
+        // La vista previa va sola; en pantalla completa todas comparten escritorio, semilla y reloj.
+        let desk = isPreview ? nil : Session.desk(mine: window?.screen, px: px)
+        let session = isPreview ? (seed: UInt64.random(in: 0...UInt64.max), start: CACurrentMediaTime()) : Session.current()
+        let (acc, es) = (accent(), Int32(systemIsSpanish ? 1 : 0))
+        let make = { (iniPtr: UnsafePointer<CChar>, artPtr: UnsafePointer<CChar>?) -> OpaquePointer? in
+            if let d = desk {
+                return d.screens.withUnsafeBufferPointer { ssfx_new_desk($0.baseAddress, Int32(d.screens.count), Int32(d.me), iniPtr, artPtr, acc, session.seed, es) }
             }
-            return ssfx_new(Int32(px.width), Int32(px.height), iniPtr, nil, accent(), UInt64.random(in: 0...UInt64.max), systemIsSpanish ? 1 : 0)
+            return ssfx_new(Int32(px.width), Int32(px.height), iniPtr, artPtr, acc, session.seed, es)
+        }
+        engine = ini.withCString { iniPtr in
+            if let art = art { return art.withCString { make(iniPtr, $0) } }
+            return make(iniPtr, nil)
         }
         engineSize = px
-        start = CACurrentMediaTime()
+        start = session.start
         guard let e = engine else { return }
         var d = [Int32](repeating: 0, count: 4)
         let down = ssfx_dest(e, &d) != 0
@@ -133,6 +185,11 @@ final class ScreensaverFXView: ScreenSaverView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         attachImageLayer()
+        // Ya se sabe en qué pantalla está: rehace el motor para que conozca su sitio en el escritorio.
+        if engine != nil && !isPreview && window != nil {
+            engineSize = .zero
+            makeEngine()
+        }
     }
 
     override func startAnimation() {
@@ -160,6 +217,7 @@ final class ScreensaverFXView: ScreenSaverView {
         if engine == nil { makeEngine() }
         guard let e = engine else { return }
         var t = now()
+        if !isPreview { Session.touch() }
         if ssfx_tick(e, CACurrentMediaTime() - start, &t) != 0 {
             present()
         }
