@@ -572,3 +572,89 @@ fn engine_from_parsed_garbage_runs() {
     run(&mut e, &mut ck, 0.0, 1200, "garbage");
     assert!(nonblack(&e) > 0 || e.current_effect().is_none());
 }
+
+// ── Varios monitores ────────────────────────────────────────────────────────
+
+use ssfx_core::desk::Screen;
+
+fn three_screens() -> Vec<Screen> {
+    vec![
+        Screen { x: -2560.0, y: -180.0, w: 2560.0, h: 1440.0, px_w: 2560, px_h: 1440 },
+        Screen { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0, px_w: 1920, px_h: 1080 },
+        Screen { x: 1920.0, y: -400.0, w: 1080.0, h: 1920.0, px_w: 1080, px_h: 1920 },
+    ]
+}
+
+#[test]
+fn monitors_stay_in_sync_with_different_frame_times() {
+    // Cada monitor dibuja a su ritmo (60, 144 y 30 Hz con tirones): mismo efecto y tema a la vez.
+    for ini in ["effects=all", "effects=all\ntheme=random", "effects=classic", "effects=relay,comet,tide"] {
+        let screens = three_screens();
+        let mut es: Vec<Engine> = (0..3).map(|me| Engine::with_desk(&screens, me, cfg(ini, 99))).collect();
+        let steps = [1.0 / 60.0, 1.0 / 144.0, 1.0 / 30.0];
+        let mut ts = [0.0f64; 3];
+        let mut checked = 0;
+        for probe in 1..=400 {
+            let target = probe as f64 * 0.75 + 0.013;
+            for k in 0..3 {
+                while ts[k] < target {
+                    // Tirón de 70 ms de vez en cuando.
+                    ts[k] += if (ts[k] * 10.0) as i64 % 37 == 0 { 0.07 } else { steps[k] };
+                    es[k].tick(ts[k].min(target), NOW);
+                }
+                ts[k] = target;
+                es[k].tick(target, NOW);
+            }
+            let fx: Vec<_> = es.iter().map(|e| e.current_effect()).collect();
+            assert!(fx.iter().all(|f| *f == fx[0]), "{ini} t={target}: {fx:?}");
+            checked += fx[0].is_some() as i32;
+        }
+        assert!(checked > 300, "{ini}: casi nunca había efecto ({checked})");
+    }
+}
+
+#[test]
+fn a_monitor_that_joins_late_catches_up() {
+    // macOS puede crear la vista de una pantalla más tarde (o recrearla al cambiar de tamaño).
+    let screens = three_screens();
+    let mut a = Engine::with_desk(&screens, 0, cfg("effects=all\ntheme=random", 3));
+    let mut t = 0.0;
+    while t < 600.0 {
+        t += 1.0 / 30.0;
+        a.tick(t, NOW);
+    }
+    let mut b = Engine::with_desk(&screens, 2, cfg("effects=all\ntheme=random", 3));
+    for _ in 0..600 {
+        t += 1.0 / 60.0;
+        a.tick(t, NOW);
+        b.tick(t, NOW);
+        assert_eq!(a.current_effect(), b.current_effect(), "t={t}");
+    }
+}
+
+#[test]
+fn same_size_monitors_mirror_local_effects() {
+    // Dos monitores iguales: los efectos de un monitor se ven idénticos en los dos a la vez.
+    let screens = [Screen { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0, px_w: 1920, px_h: 1080 }, Screen { x: 1920.0, y: 0.0, w: 1920.0, h: 1080.0, px_w: 1920, px_h: 1080 }];
+    let mut a = Engine::with_desk(&screens, 0, cfg("effects=classic", 8));
+    let mut b = Engine::with_desk(&screens, 1, cfg("effects=classic", 8));
+    let mut t = 0.0;
+    while t < 60.0 {
+        t += 1.0 / 60.0;
+        a.tick(t, NOW);
+        b.tick(t, NOW);
+        assert!(a.pixels() == b.pixels(), "t={t} {:?}", a.current_effect());
+    }
+}
+
+#[test]
+fn desk_with_bad_screens_still_runs() {
+    let bad = [Screen { x: f64::NAN, y: 0.0, w: 10.0, h: 10.0, px_w: 10, px_h: 10 }, Screen { x: 0.0, y: 0.0, w: -1.0, h: 0.0, px_w: 0, px_h: 0 }];
+    for me in [0, 1, 7] {
+        for screens in [&bad[..], &[]] {
+            let mut e = Engine::with_desk(screens, me, cfg("effects=all", 1));
+            let mut ck = Checker::new(&e, false);
+            run(&mut e, &mut ck, 0.0, 600, "pantallas no válidas");
+        }
+    }
+}

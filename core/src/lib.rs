@@ -4,6 +4,7 @@
 pub mod art;
 pub mod color;
 pub mod config;
+pub mod desk;
 pub mod ffi;
 pub mod fx;
 pub mod grid;
@@ -14,6 +15,7 @@ pub use config::{Banner, Config, Lang, Size, ThemeSel};
 
 use art::Art;
 use color::{accent_palette, THEMES};
+use desk::{Desk, Screen};
 use fx::{Ctx, Effect, EFFECTS};
 use grid::Grid;
 use raster::{Raster, CH, CW};
@@ -121,36 +123,49 @@ pub struct Engine {
     phase: Phase,
     last_fx: Option<usize>,
     last_t: f64,
+    /// Sorteo de efecto y tema: depende solo de la semilla, igual en todos los monitores.
+    seq: Rng,
+    cycle: u64,
 }
 
 const FIRST_GAP: f64 = 0.15;
 const GAP: f64 = 0.6;
+const MAX_BEHIND: f64 = 86_400.0;
 
 impl Engine {
     /// `px_w`/`px_h`: tamaño en píxeles físicos de la pantalla o ventana.
     pub fn new(px_w: i32, px_h: i32, cfg: Config) -> Engine {
+        Engine::with_desk(&[Screen::px(px_w, px_h)], 0, cfg)
+    }
+
+    /// Un motor por monitor: `screens` es el escritorio entero y `me` el monitor de este motor.
+    /// Con la misma configuración (y semilla) y el mismo `t` en `tick`, todos los motores muestran
+    /// el mismo efecto a la vez y los efectos de escritorio pasan de una pantalla a otra.
+    pub fn with_desk(screens: &[Screen], me: usize, cfg: Config) -> Engine {
         let art = match cfg.banner {
             Banner::Default => None,
             Banner::Text => Art::from_text(&cfg.title, &cfg.subtitle),
             Banner::File => cfg.art.as_deref().and_then(Art::parse),
         }
         .unwrap_or_else(Art::default_art);
-        let layout = compute_layout(px_w, px_h, cfg.size, (art.w + 8).max(40), art.h + 10);
-        let mut rng = Rng::new(cfg.seed);
+        let desk = Desk::new(screens, me, cfg.size, (art.w + 8).max(40), art.h + 10, art.w, art.h);
+        let layout = desk.mine().layout;
+        let mut seq = Rng::new(cfg.seed);
         let pal = match cfg.theme {
             ThemeSel::Auto => accent_palette(cfg.accent),
             ThemeSel::Named(i) => THEMES[i].palette(),
-            ThemeSel::Random => THEMES[rng.below(THEMES.len())].palette(),
+            ThemeSel::Random => THEMES[seq.below(THEMES.len())].palette(),
         };
         let mut ctx = Ctx {
             g: Grid::new(layout.cols, layout.rows),
             art,
             pal,
-            rng,
+            rng: Rng::new(cfg.seed),
             now: WallTime::default(),
             lang: cfg.lang,
             x0: 0,
             y0: 0,
+            desk,
         };
         ctx.center();
         Engine {
@@ -161,6 +176,8 @@ impl Engine {
             phase: Phase::Gap(FIRST_GAP),
             last_fx: None,
             last_t: 0.0,
+            seq,
+            cycle: 0,
         }
     }
 
@@ -185,22 +202,33 @@ impl Engine {
         }
     }
 
-    fn start_next(&mut self, t: f64) {
+    /// Empieza el siguiente efecto exactamente en `at` (no en el cuadro en que se nota), para
+    /// que todos los monitores cambien a la vez aunque cada uno dibuje en momentos distintos.
+    /// Si ya terminó antes de `t` (un motor que se une tarde), solo se sortea y se salta.
+    fn start_next(&mut self, at: f64, t: f64) {
         let set = &self.cfg.effects;
         let mut pool: Vec<usize> = set.iter().copied().filter(|&i| Some(i) != self.last_fx).collect();
         // Un solo efecto (o el mismo repetido, `effects=neon,neon`): se repite.
         if pool.is_empty() {
             pool = set.clone();
         }
-        let idx = pool[self.ctx.rng.below(pool.len())];
+        let idx = pool[self.seq.below(pool.len())];
         if self.cfg.theme == ThemeSel::Random {
-            self.ctx.pal = THEMES[self.ctx.rng.below(THEMES.len())].palette();
+            self.ctx.pal = THEMES[self.seq.below(THEMES.len())].palette();
         }
-        self.ctx.center();
+        self.cycle += 1;
         let def = &EFFECTS[idx];
-        let fx = (def.make)(&mut self.ctx);
+        let dur = def.secs as f64;
         self.last_fx = Some(idx);
-        self.phase = Phase::Run { fx, start: t, dur: def.secs as f64 };
+        if t - at >= dur {
+            self.phase = Phase::Gap(at + dur + GAP);
+            return;
+        }
+        // Azar del efecto: el mismo en todos los monitores, distinto en cada ciclo.
+        self.ctx.rng = Rng::new(self.cfg.seed ^ self.cycle.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        self.ctx.center();
+        let fx = (def.make)(&mut self.ctx);
+        self.phase = Phase::Run { fx, start: at, dur };
     }
 
     /// Avanza la animación a `t` segundos (monótono, desde el inicio). Devuelve true si cambió
@@ -215,18 +243,19 @@ impl Engine {
         self.last_t = t;
         self.ctx.now = now;
         self.ctx.g.clear();
-        if let Phase::Gap(until) = self.phase {
-            if t >= until {
-                self.start_next(t);
+        // Cada vuelta avanza un ciclo; el tope solo evita colgarse con tiempos absurdos.
+        for _ in 0..20_000 {
+            match self.phase {
+                // Más de un día de retraso (reloj roto): se retoma desde aquí en vez de recorrer
+                // millones de ciclos. Un motor que se une tarde con un reloj normal se pone al día.
+                Phase::Gap(until) if t - until > MAX_BEHIND => self.phase = Phase::Gap(t),
+                Phase::Gap(until) if t >= until => self.start_next(until, t),
+                Phase::Run { start, dur, .. } if t - start >= dur => self.phase = Phase::Gap(start + dur + GAP),
+                _ => break,
             }
         }
-        if let Phase::Run { fx, start, dur } = &mut self.phase {
-            let local = t - *start;
-            if local >= *dur {
-                self.phase = Phase::Gap(t + GAP);
-            } else {
-                fx.draw(local as f32, dt, &mut self.ctx);
-            }
+        if let Phase::Run { fx, start, .. } = &mut self.phase {
+            fx.draw((t - *start) as f32, dt, &mut self.ctx);
         }
         self.raster.update(&self.ctx.g)
     }

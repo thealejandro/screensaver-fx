@@ -17,6 +17,9 @@ name = "brand"
 [[example]]
 name = "bench"
 
+[[example]]
+name = "desk"
+
 [lib]
 crate-type = ["rlib", "staticlib"]
 

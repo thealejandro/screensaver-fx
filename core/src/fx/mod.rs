@@ -2,8 +2,10 @@
 
 mod classic;
 mod modern;
+mod multi;
 
 use crate::art::Art;
+use crate::desk::Desk;
 use crate::color::{gradient, mix, Rgb, WHITE};
 use crate::grid::Grid;
 use crate::rng::{hash3, Rng};
@@ -20,6 +22,8 @@ pub struct Ctx {
     /// Esquina del rótulo en la rejilla.
     pub x0: i32,
     pub y0: i32,
+    /// Todas las pantallas: los efectos de escritorio dibujan la parte que cae en esta.
+    pub desk: Desk,
 }
 
 impl Ctx {
@@ -56,7 +60,7 @@ macro_rules! fx {
     };
 }
 
-pub static EFFECTS: [FxDef; 16] = [
+pub static EFFECTS: [FxDef; 19] = [
     fx!(c"neon", c"Neón", c"Neon", 14.0, true, classic::neon),
     fx!(c"starfield", c"Estrellas", c"Starfield", 16.0, true, classic::starfield),
     fx!(c"terminal", c"Terminal", c"Terminal", 10.0, true, classic::terminal),
@@ -73,6 +77,9 @@ pub static EFFECTS: [FxDef; 16] = [
     fx!(c"waves", c"Olas", c"Waves", 12.0, false, modern::waves),
     fx!(c"spotlights", c"Focos", c"Spotlights", 12.0, false, modern::spotlights),
     fx!(c"wipe", c"Barrido", c"Wipe", 10.0, false, modern::wipe),
+    fx!(c"relay", c"Relevo", c"Relay", 13.0, false, multi::relay),
+    fx!(c"comet", c"Cometa", c"Comet", 12.0, false, multi::comet),
+    fx!(c"tide", c"Marea", c"Tide", 12.0, false, multi::tide),
 ];
 
 pub fn fx_index(id: &str) -> Option<usize> {
@@ -136,6 +143,7 @@ mod tests {
     use crate::grid::EMPTY;
 
     fn ctx(cols: i32, rows: i32, art: Art, seed: u64) -> Ctx {
+        let (art_w, art_h) = (art.w, art.h);
         let mut c = Ctx {
             g: Grid::new(cols, rows),
             art,
@@ -145,6 +153,7 @@ mod tests {
             lang: Lang::Es,
             x0: 0,
             y0: 0,
+            desk: Desk::single(crate::Layout { cols, rows, buf_w: cols.max(0) * 8, buf_h: rows.max(0) * 16, dst_x: 0, dst_y: 0, dst_w: cols.max(1) * 8, dst_h: rows.max(1) * 16, scaled_down: false }, art_w, art_h),
         };
         c.center();
         c
