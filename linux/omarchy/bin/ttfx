@@ -1,0 +1,94 @@
+#!/bin/bash
+# Envoltorio de ttfx para el salvapantallas de Omarchy (Screensaver FX).
+#
+# Solo actúa cuando lo llama el salvapantallas de Omarchy (screensaver.txt de
+# branding + --random-effect). En ese caso elige el efecto: uno de ttfx con los
+# colores originales, uno de ttfx con los colores del tema, o una animación
+# propia del binario screensaver-fx (el mismo motor que en Windows y macOS). Conserva todas las
+# demás opciones que pase Omarchy, así que sus cambios llegan sin tocar nada.
+# Cualquier otra llamada a ttfx pasa intacta al ttfx real.
+# Comprobación tras cada `omarchy update`: ~/.config/omarchy/hooks/post-update.d/screensaver-fx-check
+# https://github.com/thealejandro/screensaver-fx
+
+# Mensaje en el idioma de Omarchy: msg "texto en español" "text in English"
+msg() {
+  local l=
+  read -r l _ 2>/dev/null <"${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/language" || true
+  l=${l:-${LC_ALL:-${LC_TIME:-${LANG:-}}}}
+  l=${l,,}
+  if [[ ${l:0:2} == es ]]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+}
+
+PROB_PROPIAS=35   # % de ciclos con animación propia (clave own= de config.ini)
+PROB_TEMA=50      # % del resto que usa los colores del tema
+
+FX=$(command -v screensaver-fx || echo ~/.local/bin/screensaver-fx)
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/screensaver-fx/config.ini"
+own=$(sed -n 's/^[[:space:]]*own[[:space:]]*=[[:space:]]*\([0-9]\{1,3\}\)[[:space:]]*$/\1/p' "$CONFIG" 2>/dev/null | tail -1)
+[[ -n $own ]] && PROB_PROPIAS=$((10#$own > 100 ? 100 : 10#$own))
+STATE="${XDG_RUNTIME_DIR:-/tmp}/screensaver-last-effect"
+
+# ttfx real: el siguiente en el PATH que no sea este archivo
+self=$(realpath "$0")
+real=""
+while IFS= read -r candidate; do
+  [[ $(realpath "$candidate") != "$self" ]] && { real=$candidate; break; }
+done < <(type -ap ttfx)
+[[ -z $real ]] && { echo "$(msg "ttfx: no se encuentra el ttfx real" "ttfx: the real ttfx was not found")" >&2; exit 127; }
+
+# ¿Es la llamada del salvapantallas?
+is_screensaver=0
+has_random=0
+for a in "$@"; do
+  [[ $a == "--random-effect" ]] && has_random=1
+  [[ $a == */omarchy/branding/screensaver.txt ]] && is_screensaver=1
+done
+((is_screensaver && has_random)) || exec "$real" "$@"
+
+last=$(cat "$STATE" 2>/dev/null)
+pick_different() { # elige de la lista evitando repetir el último
+  local -a list=("$@") pick
+  pick=${list[RANDOM % ${#list[@]}]}
+  [[ $pick == "$last" && ${#list[@]} -gt 1 ]] && pick=${list[RANDOM % ${#list[@]}]}
+  echo "$pick"
+}
+
+# 1) Animación propia
+if [[ -x $FX ]] && ((RANDOM % 100 < PROB_PROPIAS)); then
+  mapfile -t own < <("$FX" --list 2>/dev/null)
+  if ((${#own[@]})); then
+    pick=$(pick_different "${own[@]}")
+    echo "$pick" >"$STATE"
+    printf '\033[2J'
+    child=""
+    trap '[[ -n $child ]] && kill $child 2>/dev/null; exit 0' TERM INT HUP
+    "$FX" "$pick" --no-restore-cursor &
+    child=$!
+    wait "$child"
+    exit 0
+  fi
+fi
+
+# 2) Efecto de ttfx (lista leída del propio ttfx, siempre al día)
+mapfile -t effects < <("$real" --help 2>/dev/null | awk '/^Commands:/{f=1;next} /^Options:/{f=0} f && $1!="help"{print $1}')
+((${#effects[@]})) || exec "$real" "$@"
+pick=$(pick_different "${effects[@]}")
+echo "$pick" >"$STATE"
+
+args=()
+for a in "$@"; do
+  [[ $a == "--random-effect" ]] || args+=("$a")
+done
+
+extra=()
+if [[ -x $FX ]] && ((RANDOM % 100 < PROB_TEMA)) &&
+  "$real" "$pick" --help 2>/dev/null | grep -q -- '--final-gradient-stops'; then
+  read -ra colors <<<"$("$FX" --palette 2>/dev/null)"
+  if ((${#colors[@]} >= 2)); then
+    extra=(--final-gradient-stops "${colors[@]}")
+    "$real" "$pick" --help 2>/dev/null | grep -q -- '--final-gradient-direction' &&
+      extra+=(--final-gradient-direction diagonal)
+  fi
+fi
+
+exec "$real" "${args[@]}" "$pick" "${extra[@]}"
