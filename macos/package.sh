@@ -41,12 +41,17 @@ tiffutil -cathidpicheck installer/assets/dmg-background.png installer/assets/dmg
 hdiutil create -quiet -volname "$VOL" -srcfolder "$DMG/src" -fs HFS+ -format UDRW -ov "$DMG/rw.dmg"
 # Si ya hubiera uno montado con el mismo nombre, Finder no sabría cuál decorar.
 [ -d "/Volumes/$VOL" ] && hdiutil detach -quiet "/Volumes/$VOL" || true
-DEV=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG/rw.dmg" | awk '/Apple_HFS/ {print $1}')
+# Salida de attach: «/dev/diskNsM<TAB>Apple_HFS<TAB>/Volumes/…». Se trabaja con el punto de montaje
+# real: si el detach anterior falló, macOS lo habrá montado como «Screensaver FX 1».
+ATTACH=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG/rw.dmg" | grep Apple_HFS)
+DEV=$(printf '%s' "$ATTACH" | awk '{print $1}')
+MNT=$(printf '%s' "$ATTACH" | awk -F'\t' '{print $NF}')
 # Diseño de la ventana con Finder. Sin sesión gráfica (o si Finder no responde en 90 s) el .dmg
-# sigue siendo válido, solo que sin fondo ni posiciones.
+# sigue siendo válido, solo que sin fondo ni posiciones. Las posiciones son el centro de cada
+# icono; la ventana mide 640x428 = fondo de 640x400 + 28 de barra de título.
 osascript >/dev/null <<EOF &
 tell application "Finder"
-  tell disk "$VOL"
+  tell disk "$(basename "$MNT")"
     open
     set current view of container window to icon view
     set toolbar visible of container window to false
@@ -68,11 +73,11 @@ tell application "Finder"
 end tell
 EOF
 OSA=$!
-( sleep 90 && kill $OSA ) >/dev/null 2>&1 &
+( sleep 90; kill $OSA; sleep 5; kill -9 $OSA ) >/dev/null 2>&1 &
 WATCH=$!
 wait $OSA && echo "Ventana del .dmg diseñada" || echo "aviso: Finder no diseñó la ventana del .dmg"
 kill $WATCH 2>/dev/null || true
-rm -rf "/Volumes/$VOL/.fseventsd"
+rm -rf "$MNT/.fseventsd"
 sync
 hdiutil detach -quiet "$DEV" || hdiutil detach -quiet -force "$DEV"
 rm -f "dist/ScreensaverFX-$VER.dmg"
