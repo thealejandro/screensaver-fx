@@ -118,7 +118,8 @@ pub struct Engine {
     cfg: Config,
     layout: Layout,
     ctx: Ctx,
-    raster: Raster,
+    /// Sin rasterizador en una terminal: allí se pinta la rejilla tal cual.
+    raster: Option<Raster>,
     phase: Phase,
     last_fx: Option<usize>,
     last_t: f64,
@@ -130,16 +131,35 @@ const GAP: f64 = 0.6;
 impl Engine {
     /// `px_w`/`px_h`: tamaño en píxeles físicos de la pantalla o ventana.
     pub fn new(px_w: i32, px_h: i32, cfg: Config) -> Engine {
-        let art = match cfg.banner {
+        let art = Engine::art_for(&cfg);
+        let layout = compute_layout(px_w, px_h, cfg.size, (art.w + 8).max(40), art.h + 10);
+        let raster = Raster::new(layout.cols, layout.rows);
+        Engine::build(cfg, art, layout, Some(raster))
+    }
+
+    /// Motor para una terminal de `cols` x `rows` celdas: no rasteriza, la rejilla se lee con
+    /// `grid()` y la pinta quien llama. Un rótulo que no quepa queda recortado por los bordes.
+    pub fn for_terminal(cols: i32, rows: i32, cfg: Config) -> Engine {
+        let (cols, rows) = (cols.clamp(1, 1000), rows.clamp(1, 500));
+        let art = Engine::art_for(&cfg);
+        let (bw, bh) = (cols * CW as i32, rows * CH as i32);
+        let layout = Layout { cols, rows, buf_w: bw, buf_h: bh, dst_x: 0, dst_y: 0, dst_w: bw, dst_h: bh, scaled_down: false };
+        Engine::build(cfg, art, layout, None)
+    }
+
+    fn art_for(cfg: &Config) -> Art {
+        match cfg.banner {
             Banner::Default => None,
             Banner::Text => Art::from_text_with(&cfg.title, &cfg.subtitle, cfg.font),
             Banner::File => cfg.art.as_deref().and_then(Art::parse),
         }
-        .unwrap_or_else(|| Art::default_art_with(cfg.font));
-        let layout = compute_layout(px_w, px_h, cfg.size, (art.w + 8).max(40), art.h + 10);
+        .unwrap_or_else(|| Art::default_art_with(cfg.font))
+    }
+
+    fn build(cfg: Config, art: Art, layout: Layout, raster: Option<Raster>) -> Engine {
         let mut rng = Rng::new(cfg.seed);
         let pal = match cfg.theme {
-            ThemeSel::Auto => accent_palette(cfg.accent),
+            ThemeSel::Auto => cfg.system_palette.clone().filter(|p| p.len() >= 2).unwrap_or_else(|| accent_palette(cfg.accent)),
             ThemeSel::Named(i) => THEMES[i].palette(),
             ThemeSel::Random => THEMES[rng.below(THEMES.len())].palette(),
         };
@@ -155,7 +175,7 @@ impl Engine {
         };
         ctx.center();
         Engine {
-            raster: Raster::new(layout.cols, layout.rows),
+            raster,
             cfg,
             layout,
             ctx,
@@ -171,12 +191,17 @@ impl Engine {
 
     /// Búfer BGRX (0x00RRGGBB por píxel) de `buf_w` x `buf_h`.
     pub fn pixels(&self) -> &[u32] {
-        &self.raster.px
+        self.raster.as_ref().map_or(&[], |r| &r.px)
+    }
+
+    /// Rejilla de celdas del último tick (carácter y color), para pintarla en una terminal.
+    pub fn grid(&self) -> &Grid {
+        &self.ctx.g
     }
 
     /// Rectángulo cambiado en el último tick, en píxeles del búfer.
     pub fn dirty(&self) -> Option<(u32, u32, u32, u32)> {
-        self.raster.dirty
+        self.raster.as_ref().and_then(|r| r.dirty)
     }
 
     pub fn current_effect(&self) -> Option<&'static str> {
@@ -209,7 +234,9 @@ impl Engine {
     pub fn tick(&mut self, t: f64, now: WallTime) -> bool {
         if !t.is_finite() {
             // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora.
-            self.raster.dirty = None;
+            if let Some(r) = self.raster.as_mut() {
+                r.dirty = None;
+            }
             return false;
         }
         let dt = (t - self.last_t).clamp(0.0, 0.1) as f32;
@@ -229,7 +256,10 @@ impl Engine {
                 fx.draw(local as f32, dt, &mut self.ctx);
             }
         }
-        self.raster.update(&self.ctx.g)
+        match self.raster.as_mut() {
+            Some(r) => r.update(&self.ctx.g),
+            None => true,
+        }
     }
 }
 

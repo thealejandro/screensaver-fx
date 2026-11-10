@@ -84,6 +84,9 @@ pub struct Config {
     pub effects: Vec<usize>,
     /// Color de acento del sistema (para `theme=auto`).
     pub accent: Rgb,
+    /// Paleta que da el sistema (los colores del tema de Omarchy); con `theme=auto` manda
+    /// sobre el acento. La pone la plataforma, no el ini.
+    pub system_palette: Option<Vec<Rgb>>,
     pub seed: u64,
     /// Rótulo propio (contenido de screensaver.txt), si hay.
     pub art: Option<String>,
@@ -101,6 +104,7 @@ impl Config {
             lang: if sys_lang_es { Lang::Es } else { Lang::En },
             effects: (0..EFFECTS.len()).collect(),
             accent,
+            system_palette: None,
             seed,
             art: None,
         };
