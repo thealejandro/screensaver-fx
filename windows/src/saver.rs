@@ -30,6 +30,47 @@ thread_local! {
 const MIN_FRAME: f64 = 0.0125;
 const MOUSE_SLOP: i32 = 6;
 
+/// Perfilado opcional (`SSFX_PROFILE=<archivo>`): al salir escribe p50/p99/máximo del motor, del
+/// dibujado y del intervalo entre cuadros, y cuántos cuadros llegaron tarde (> 1,5 veces el
+/// intervalo habitual), que son los tirones que se notan. Sin la variable no hace nada.
+struct Profile {
+    path: std::path::PathBuf,
+    tick: Vec<f32>,
+    blit: Vec<f32>,
+    gap: Vec<f32>,
+}
+
+impl Profile {
+    fn from_env() -> Option<Profile> {
+        let path = std::env::var_os("SSFX_PROFILE").filter(|p| !p.is_empty())?;
+        Some(Profile { path: path.into(), tick: Vec::with_capacity(8192), blit: Vec::with_capacity(8192), gap: Vec::with_capacity(8192) })
+    }
+
+    fn write(mut self) {
+        use std::fmt::Write;
+        let mut out = String::new();
+        let mut line = |name: &str, v: &mut Vec<f32>| {
+            if v.is_empty() {
+                return;
+            }
+            v.sort_by(|a, b| a.total_cmp(b));
+            let p = |q: f32| v[((v.len() - 1) as f32 * q).round() as usize];
+            let _ = writeln!(out, "{name:<8} n={:<6} p50={:.3} ms p99={:.3} ms máx={:.3} ms", v.len(), p(0.5), p(0.99), v[v.len() - 1]);
+        };
+        line("motor", &mut self.tick);
+        line("dibujo", &mut self.blit);
+        let typical = {
+            let mut g = self.gap.clone();
+            g.sort_by(|a, b| a.total_cmp(b));
+            g.get(g.len() / 2).copied().unwrap_or(0.0)
+        };
+        let late = self.gap.iter().filter(|&&g| g > typical * 1.5).count();
+        line("cuadro", &mut self.gap);
+        let _ = writeln!(out, "tarde    {late} de {} cuadros (> {:.1} ms)", self.gap.len(), typical * 1.5);
+        let _ = std::fs::write(&self.path, out);
+    }
+}
+
 unsafe extern "system" fn monitor_proc(_: HMONITOR, _: HDC, rc: *mut RECT, data: LPARAM) -> BOOL {
     (*(data as *mut Vec<RECT>)).push(*rc);
     TRUE
@@ -179,7 +220,15 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
                 GetClientRect(p, &mut rc);
                 rects.push(rc);
             }
-            None if windowed => rects.push(RECT { left: 0, top: 0, right: 1280, bottom: 720 }),
+            None if windowed => {
+                // SSFX_WINDOW=1920x1080: otro tamaño de ventana, para medir sin pantalla completa.
+                let (w, h) = std::env::var("SSFX_WINDOW")
+                    .ok()
+                    .and_then(|s| s.split_once('x').and_then(|(w, h)| Some((w.trim().parse().ok()?, h.trim().parse().ok()?))))
+                    .filter(|&(w, h): &(i32, i32)| (64..=8192).contains(&w) && (64..=8192).contains(&h))
+                    .unwrap_or((1280, 720));
+                rects.push(RECT { left: 0, top: 0, right: w, bottom: h });
+            }
             None => {
                 EnumDisplayMonitors(core::ptr::null_mut(), core::ptr::null(), Some(monitor_proc), &mut rects as *mut _ as LPARAM);
             }
@@ -236,6 +285,7 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             hooks = [SetWindowsHookExW(WH_KEYBOARD_LL, Some(key_hook), hinst, 0), SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), hinst, 0)];
         }
 
+        let mut prof = Profile::from_env();
         let t0 = Instant::now();
         let mut last = f64::NEG_INFINITY;
         let mut msg: MSG = core::mem::zeroed();
@@ -254,12 +304,24 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             }
             let t = t0.elapsed().as_secs_f64();
             if t - last >= MIN_FRAME {
+                if let Some(p) = prof.as_mut().filter(|_| last.is_finite()) {
+                    p.gap.push(((t - last) * 1000.0) as f32);
+                }
                 last = t;
                 let now = sys::now();
                 SAVERS.with(|v| {
                     for s in v.borrow_mut().iter_mut() {
-                        if s.engine.tick(t, now) {
+                        let a = Instant::now();
+                        let changed = s.engine.tick(t, now);
+                        let b = Instant::now();
+                        if changed {
                             blit(s, s.hdc, false);
+                        }
+                        if let Some(p) = prof.as_mut() {
+                            p.tick.push((b - a).as_secs_f32() * 1000.0);
+                            if changed {
+                                p.blit.push(b.elapsed().as_secs_f32() * 1000.0);
+                            }
                         }
                     }
                 });
@@ -273,6 +335,9 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
         }
         if !preview {
             ShowCursor(TRUE);
+        }
+        if let Some(p) = prof {
+            p.write();
         }
     }
 }

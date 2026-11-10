@@ -4,7 +4,7 @@
 ; Las imágenes y el icono los genera: cargo run -p ssfx-core --example brand --release
 
 #ifndef AppVersion
-  #define AppVersion "0.1.1"
+  #define AppVersion "0.1.3"
 #endif
 #ifndef X64Bin
   #define X64Bin "..\..\target\release\ScreensaverFX.exe"
@@ -644,8 +644,9 @@ var
 begin
   F := ExpandConstant('{tmp}\update-task.xml');
   SetArrayLength(Lines, 1);
+  { Sin declaración <?xml?> y en ANSI: schtasks /XML rechaza el UTF-8 declarado («no se pudo
+    cambiar la codificación») y también el BOM. }
   Lines[0] :=
-    '<?xml version="1.0" encoding="UTF-8"?>' + #13#10 +
     '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">' + #13#10 +
     '  <RegistrationInfo><Description>Busca e instala actualizaciones de Screensaver FX.</Description></RegistrationInfo>' + #13#10 +
     '  <Triggers>' + #13#10 +
@@ -666,7 +667,7 @@ begin
     '  <Actions Context="System"><Exec><Command>"' + ExpandConstant('{app}\ScreensaverFX.exe') + '"</Command>' +
     '<Arguments>/update</Arguments></Exec></Actions>' + #13#10 +
     '</Task>';
-  SaveStringsToUTF8File(F, Lines, False);
+  SaveStringsToFile(F, Lines, False);
   Exec(ExpandConstant('{sys}\schtasks.exe'), '/Create /F /TN "ScreensaverFX\Update" /XML "' + F + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
   if Code <> 0 then
     Log(Format('schtasks /Create terminó con %d', [Code]));
