@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "screensaver-fx"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "ssfx-core",
  "windows-sys",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "ssfx-core"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "font8x8",
  "miniz_oxide",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "ssfx-term"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "ssfx-core",
 ]

@@ -12,7 +12,7 @@ pub mod grid;
 pub mod raster;
 pub mod rng;
 
-pub use config::{Banner, Config, Font, Lang, Size, ThemeSel};
+pub use config::{Banner, Config, Font, Lang, Screens, Size, ThemeSel};
 
 use art::Art;
 use color::{accent_palette, THEMES};
@@ -128,6 +128,8 @@ pub struct Engine {
     /// Sorteo de efecto y tema: depende solo de la semilla, igual en todos los monitores.
     seq: Rng,
     cycle: u64,
+    /// Pantalla que no anima (`screens=main` y no es la principal): se queda en negro.
+    blank: bool,
 }
 
 const FIRST_GAP: f64 = 0.15;
@@ -143,22 +145,35 @@ impl Engine {
     /// Un motor por monitor: `screens` es el escritorio entero y `me` el monitor de este motor.
     /// Con la misma configuración (y semilla) y el mismo `t` en `tick`, todos los motores muestran
     /// el mismo efecto a la vez y los efectos de escritorio pasan de una pantalla a otra.
-    pub fn with_desk(screens: &[Screen], me: usize, cfg: Config) -> Engine {
+    /// La principal es `screens[0]`; `cfg.screens` decide si se usa el escritorio entero.
+    pub fn with_desk(screens: &[Screen], me: usize, mut cfg: Config) -> Engine {
+        let mine = [screens.get(me).copied().unwrap_or(Screen::px(1, 1))];
+        let (screens, me, blank) = match cfg.screens {
+            _ if screens.len() < 2 || me >= screens.len() => (screens, me, false),
+            Screens::Span => (screens, me, false),
+            Screens::Each => {
+                // Cada pantalla con su propia semilla: otro orden de efectos y de colores.
+                cfg.seed ^= (me as u64 + 1).wrapping_mul(0xD6E8_FEB8_6659_FD93);
+                (&mine[..], 0, false)
+            }
+            Screens::Main => (&mine[..], 0, me != 0),
+        };
         let art = Engine::art_for(&cfg);
         let desk = Desk::new(screens, me, cfg.size, (art.w + 8).max(40), art.h + 10, art.w, art.h);
         let raster = Raster::new(desk.mine().layout.cols, desk.mine().layout.rows);
-        Engine::build(cfg, art, desk, Some(raster))
+        Engine::build(cfg, art, desk, Some(raster), blank)
     }
 
     /// Motor para una terminal de `cols` x `rows` celdas: no rasteriza, la rejilla se lee con
     /// `grid()` y la pinta quien llama. Un rótulo que no quepa queda recortado por los bordes.
+    /// Cada terminal es una pantalla por su cuenta: `cfg.screens` no aplica.
     pub fn for_terminal(cols: i32, rows: i32, cfg: Config) -> Engine {
         let (cols, rows) = (cols.clamp(1, 1000), rows.clamp(1, 500));
         let art = Engine::art_for(&cfg);
         let (bw, bh) = (cols * CW as i32, rows * CH as i32);
         let layout = Layout { cols, rows, buf_w: bw, buf_h: bh, dst_x: 0, dst_y: 0, dst_w: bw, dst_h: bh, scaled_down: false };
         let desk = Desk::single(layout, art.w, art.h);
-        Engine::build(cfg, art, desk, None)
+        Engine::build(cfg, art, desk, None, false)
     }
 
     fn art_for(cfg: &Config) -> Art {
@@ -170,7 +185,7 @@ impl Engine {
         .unwrap_or_else(|| Art::default_art_with(cfg.font))
     }
 
-    fn build(cfg: Config, art: Art, desk: Desk, raster: Option<Raster>) -> Engine {
+    fn build(cfg: Config, art: Art, desk: Desk, raster: Option<Raster>, blank: bool) -> Engine {
         let layout = desk.mine().layout;
         let mut seq = Rng::new(cfg.seed);
         let pal = match cfg.theme {
@@ -200,6 +215,7 @@ impl Engine {
             last_t: 0.0,
             seq,
             cycle: 0,
+            blank,
         }
     }
 
@@ -261,8 +277,9 @@ impl Engine {
     /// Avanza la animación a `t` segundos (monótono, desde el inicio). Devuelve true si cambió
     /// algún píxel: si es false la plataforma puede saltarse el dibujado.
     pub fn tick(&mut self, t: f64, now: WallTime) -> bool {
-        if !t.is_finite() {
-            // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora.
+        if !t.is_finite() || self.blank {
+            // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora. Una
+            // pantalla en negro no dibuja nunca.
             if let Some(r) = self.raster.as_mut() {
                 r.dirty = None;
             }
