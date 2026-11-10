@@ -109,5 +109,24 @@ Check "protector deseleccionado" ([string]::IsNullOrEmpty((Get-ItemProperty $des
 Check "accesos directos eliminados" (@(Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter '*Screensaver FX*.lnk').Count -eq 0)
 Check "configuración del usuario conservada (silencioso = no borrar)" (Test-Path "$data\config.ini")
 
+Write-Host "6) Para todos: tarea de actualización como SYSTEM"
+$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $admin) { Warn "requiere una sesión de administrador" $false } else {
+  $pf = "$env:ProgramFiles\ScreensaverFX"
+  $ulog = "$env:ProgramData\ScreensaverFX\update.log"
+  $p = Start-Process $Setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ALLUSERS /NOACTIVATE' -PassThru
+  $p.WaitForExit(180000) | Out-Null
+  Check "instalación para todos" (($p.ExitCode -eq 0) -and (Test-Path "$pf\ScreensaverFX.exe"))
+  schtasks /Query /TN 'ScreensaverFX\Update' *> $null
+  Check "tarea programada creada" ($LASTEXITCODE -eq 0)
+  schtasks /Run /TN 'ScreensaverFX\Update' *> $null
+  Check "la tarea corre como SYSTEM y deja constancia" (WaitFor { (Test-Path $ulog) -and (Select-String -Path $ulog -Pattern 'actualizaciones:' -Quiet) } 60)
+  $u = Start-Process "$pf\unins000.exe" -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru
+  $u.WaitForExit(60000) | Out-Null
+  Check "desinstalada" (WaitFor { -not (Test-Path "$pf\ScreensaverFX.exe") } 30)
+  schtasks /Query /TN 'ScreensaverFX\Update' *> $null
+  Check "tarea eliminada" ($LASTEXITCODE -ne 0)
+}
+
 Write-Host "Resultado: $script:fails fallos"
 exit $script:fails

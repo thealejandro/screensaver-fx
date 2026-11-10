@@ -1,6 +1,6 @@
 [package]
 name = "ssfx-core"
-version = "0.1.1"
+version = "0.1.3"
 edition = "2021"
 description = "Motor de animaciones de Screensaver FX (rejilla de celdas, sin dependencias de plataforma)"
 license = "MIT"
@@ -16,6 +16,9 @@ name = "brand"
 
 [[example]]
 name = "banner"
+
+[[example]]
+name = "bench"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
