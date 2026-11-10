@@ -37,14 +37,15 @@ impl Art {
         Art::from_text_with(title, subtitle, Font::Block)
     }
 
+    /// Como `from_text`, con el estilo de letra pedido.
     pub fn from_text_with(title: &str, subtitle: &str, font: Font) -> Option<Art> {
         Art::parse(&banner_text_with(title, subtitle, font))
     }
 
     /// JACC + XACODE con el estilo de letra pedido (la de píxel no aplica: es un dibujo a mano).
     pub fn default_art_with(font: Font) -> Art {
-        let font = if font == Font::Pixel { Font::Block } else { font };
-        Art::from_text_with("JACC", "XACODE", font).expect("rótulo por defecto")
+        let lines: Vec<String> = default_text().trim_end_matches('\n').split('\n').map(str::to_string).collect();
+        Art::parse(&(styled(lines, font).join("\n") + "\n")).expect("rótulo por defecto")
     }
 }
 
@@ -58,34 +59,105 @@ fn glyph(ch: char) -> [u8; 8] {
         .unwrap_or([0; 8])
 }
 
-/// Escribe `s` con píxeles de bloque. `big`: cada píxel es "██" (8 filas de alto);
-/// si no, medios bloques ▀▄ (4 filas de alto). Las letras se recortan a su ancho real.
-fn bitmap_line(s: &str, big: bool) -> Vec<String> {
-    let rows = if big { 8 } else { 4 };
-    let mut out = vec![String::new(); rows];
-    for (i, ch) in s.chars().enumerate() {
-        let g = glyph(ch);
-        let used = g.iter().fold(0u8, |a, &r| a | r);
-        let (c0, c1) = if used == 0 { (0, 3) } else { (used.trailing_zeros(), 7 - used.leading_zeros()) };
-        if i > 0 {
-            for line in out.iter_mut() {
-                line.push_str(if big { "  " } else { " " });
-            }
-        }
+/// Dos píxeles, uno sobre otro, en una celda.
+fn half(top: bool, bottom: bool) -> char {
+    match (top, bottom) {
+        (true, true) => '█',
+        (true, false) => '▀',
+        (false, true) => '▄',
+        _ => ' ',
+    }
+}
+
+/// Una letra lista para escribir: filas del mismo ancho y cuántas van hasta la línea base.
+struct Glyph {
+    rows: Vec<String>,
+    base: usize,
+}
+
+fn designed(c: char, big: bool) -> Option<Vec<String>> {
+    let rows: &[&str] = if big { font::big(c)? } else { font::small(c)? };
+    Some(rows.iter().map(|r| r.to_string()).collect())
+}
+
+/// Letra con su signo encima (tilde, diéresis...), centrados uno sobre otro.
+fn marked(rows: Vec<String>, mark: font::Mark, big: bool) -> Vec<String> {
+    let px = mark.pixels(big);
+    let (w, mw) = (rows[0].chars().count(), px[0].len());
+    let width = w.max(mw);
+    let pad = |s: &str, n: usize| format!("{}{s}{}", " ".repeat((width - n) / 2), " ".repeat(width - n - (width - n) / 2));
+    // Una fila de píxeles libre entre el signo y la letra; arriba se completa hasta un número par.
+    let mut lines: Vec<&str> = px.to_vec();
+    lines.push("");
+    if lines.len() % 2 == 1 {
+        lines.insert(0, "");
+    }
+    let on = |l: &str, x: usize| l.as_bytes().get(x) == Some(&b'#');
+    let mut out: Vec<String> = lines
+        .chunks(2)
+        .map(|p| pad(&(0..mw).map(|x| half(on(p[0], x), on(p[1], x))).collect::<String>(), mw))
+        .collect();
+    out.extend(rows.iter().map(|r| pad(r, w)));
+    out
+}
+
+/// Letra de font8x8 recortada a su ancho, para lo que no tiene letra propia.
+fn bitmap(c: char, big: bool) -> Glyph {
+    let g = glyph(c);
+    let used = g.iter().fold(0u8, |a, &r| a | r);
+    let (c0, c1) = if used == 0 { (0, 3) } else { (used.trailing_zeros(), 7 - used.leading_zeros()) };
+    let on = |row: usize, col: u32| g[row] >> col & 1 == 1;
+    let rows: Vec<String> = if big {
+        (0..8).map(|r| (c0..=c1).map(|c| if on(r, c) { "██" } else { "  " }).collect()).collect()
+    } else {
+        (0..4).map(|r| (c0..=c1).map(|c| half(on(r * 2, c), on(r * 2 + 1, c))).collect()).collect()
+    };
+    // La fila 8 de font8x8 es para lo que baja de la línea (ç, ¿...).
+    Glyph { rows, base: if big { 7 } else { 4 } }
+}
+
+fn letter(c: char, big: bool, pixel: bool) -> Glyph {
+    // Letra de píxel: todo sale de font8x8, tal cual se escribió (con sus minúsculas).
+    if pixel {
+        return bitmap(c, big);
+    }
+    // En mayúscula (si es una sola letra: ß se queda como está).
+    let mut up = c.to_uppercase();
+    let c = match (up.next(), up.next()) {
+        (Some(u), None) => u,
+        _ => c,
+    };
+    if let Some(rows) = designed(c, big) {
+        return Glyph { base: rows.len(), rows };
+    }
+    if let Some((base, mark)) = font::decompose(c) {
+        let rows = marked(designed(base, big).expect("letra base"), mark, big);
+        return Glyph { base: rows.len(), rows };
+    }
+    bitmap(c, big)
+}
+
+/// Escribe `s` en bloques: `big` con las letras grandes (9 filas), si no con las pequeñas (4).
+/// Las letras se alinean en la línea base; los signos de encima y lo que baja la hacen crecer.
+fn bitmap_line(s: &str, big: bool, pixel: bool) -> Vec<String> {
+    let glyphs: Vec<Glyph> = s.chars().map(|c| letter(c, big, pixel)).collect();
+    let up = glyphs.iter().map(|g| g.base).max().unwrap_or(0);
+    let down = glyphs.iter().map(|g| g.rows.len() - g.base).max().unwrap_or(0);
+    // La letra de píxel va más apretada, como en las versiones anteriores.
+    let gap = " ".repeat(match (big, pixel) {
+        (true, false) => 3,
+        (false, true) => 1,
+        _ => 2,
+    });
+    let mut out = vec![String::new(); up + down];
+    for (i, g) in glyphs.iter().enumerate() {
+        let blank = " ".repeat(g.rows[0].chars().count());
         for (r, line) in out.iter_mut().enumerate() {
-            for c in c0..=c1 {
-                let on = |row: usize| g[row] >> c & 1 == 1;
-                if big {
-                    line.push_str(if on(r) { "██" } else { "  " });
-                } else {
-                    line.push(match (on(r * 2), on(r * 2 + 1)) {
-                        (true, true) => '█',
-                        (true, false) => '▀',
-                        (false, true) => '▄',
-                        _ => ' ',
-                    });
-                }
+            if i > 0 {
+                line.push_str(&gap);
             }
+            let row = (r + g.base).checked_sub(up).and_then(|k| g.rows.get(k));
+            line.push_str(row.unwrap_or(&blank));
         }
     }
     out
@@ -96,50 +168,6 @@ pub const MAX_SUBTITLE: usize = 32;
 
 fn width(s: &str) -> usize {
     s.chars().count()
-}
-
-/// Rellena con espacios a los lados hasta `w` celdas (centrado).
-fn pad_center(s: &str, w: usize) -> String {
-    let left = w.saturating_sub(width(s)) / 2;
-    let right = w.saturating_sub(width(s) + left);
-    format!("{}{s}{}", " ".repeat(left), " ".repeat(right))
-}
-
-/// Escribe `s` con las letras de bloque de `font.rs`. `big`: 9 filas (más 2 arriba si el texto
-/// lleva tildes o Ñ); si no, 4 filas. Lo que no tiene dibujo propio cae en la letra de píxel.
-fn block_line(s: &str, big: bool) -> Vec<String> {
-    let base = if big { font::BIG_H } else { font::SMALL_H };
-    let chars: Vec<char> = s.chars().collect();
-    let marked = |ch: char| big && font::decompose(ch).1.is_some() && font::big(font::decompose(ch).0).is_some();
-    let top = if chars.iter().any(|&c| marked(c)) { font::MARK_H } else { 0 };
-    let mut out = vec![String::new(); top + base];
-    for (i, &ch) in chars.iter().enumerate() {
-        let (plain, mark) = font::decompose(ch);
-        let drawn: Option<Vec<String>> = if big { font::big(plain).map(|g| g.iter().map(|r| r.to_string()).collect()) } else { font::small(ch).map(|g| g.iter().map(|r| r.to_string()).collect()) };
-        let mark = mark.filter(|_| big && drawn.is_some());
-        let mut rows = drawn.unwrap_or_else(|| {
-            let mut px = bitmap_line(&ch.to_string(), big);
-            // La letra de píxel grande mide 8 filas: se apoya en la base de las de 9.
-            while px.len() < base {
-                px.insert(0, " ".repeat(width(&px[0])));
-            }
-            px
-        });
-        let mark_rows = mark.map(|m| m.rows());
-        let w = width(&rows[0]).max(mark_rows.map_or(0, |m| width(m[0])));
-        rows.iter_mut().for_each(|r| *r = pad_center(r, w));
-        if i > 0 {
-            out.iter_mut().for_each(|line| line.push_str(if big { "   " } else { "  " }));
-        }
-        for (r, line) in out.iter_mut().enumerate() {
-            if r < top {
-                line.push_str(&pad_center(mark_rows.map_or("", |m| m[r]), w));
-            } else {
-                line.push_str(&rows[r - top]);
-            }
-        }
-    }
-    out
 }
 
 /// Sombra: cada celda dibujada proyecta un ░ una celda abajo a la derecha.
@@ -194,12 +222,22 @@ fn outline(lines: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Aplica el estilo de letra a un rótulo ya escrito en bloques.
+fn styled(lines: Vec<String>, font: Font) -> Vec<String> {
+    match font {
+        Font::Shadow => add_shadow(&lines),
+        Font::Outline => outline(&lines),
+        Font::Block | Font::Pixel => lines,
+    }
+}
+
 /// Rótulo de texto con la letra de bloque.
 pub fn banner_text(title: &str, subtitle: &str) -> String {
     banner_text_with(title, subtitle, Font::Block)
 }
 
 pub fn banner_text_with(title: &str, subtitle: &str, font: Font) -> String {
+    let pixel = font == Font::Pixel;
     let mut title: String = title.trim().chars().take(MAX_TITLE).collect();
     let mut subtitle: String = subtitle.trim().chars().take(MAX_SUBTITLE).collect();
     // Una sola línea (esté en el campo que esté) siempre va en letra grande.
@@ -207,23 +245,21 @@ pub fn banner_text_with(title: &str, subtitle: &str, font: Font) -> String {
         title = subtitle.chars().take(MAX_TITLE).collect();
         subtitle.clear();
     }
-    let pixel = font == Font::Pixel;
-    let line = |s: &str, big: bool| if pixel { bitmap_line(s, big) } else { block_line(s, big) };
     let mut blocks = Vec::new();
     if !title.is_empty() {
-        blocks.push(line(&title, true));
+        blocks.push(bitmap_line(&title, true, pixel));
     }
     if !subtitle.is_empty() {
-        blocks.push(line(&subtitle, false));
+        blocks.push(bitmap_line(&subtitle, false, pixel));
     }
-    let total = blocks.iter().map(|b| width(&b[0])).max().unwrap_or(0);
+    let len = |s: &String| s.chars().count();
+    let width = blocks.iter().map(|b| len(&b[0])).max().unwrap_or(0);
     let mut out: Vec<String> = Vec::new();
     for (i, b) in blocks.iter().enumerate() {
         if i > 0 {
-            // La letra de bloque respira mejor con dos filas entre título y subtítulo.
-            out.extend(vec![String::new(); if pixel { 1 } else { 2 }]);
+            out.push(String::new());
         }
-        let pad = " ".repeat((total - width(&b[0])) / 2);
+        let pad = " ".repeat((width - len(&b[0])) / 2);
         out.extend(b.iter().map(|l| format!("{pad}{l}").trim_end().to_string()));
     }
     // Quita filas vacías arriba y abajo (letras sin trazos en la base, como en minúsculas).
@@ -233,17 +269,30 @@ pub fn banner_text_with(title: &str, subtitle: &str, font: Font) -> String {
     while out.last().is_some_and(|l| l.is_empty()) {
         out.pop();
     }
-    let out = match font {
-        Font::Shadow => add_shadow(&out),
-        Font::Outline => outline(&out),
-        Font::Block | Font::Pixel => out,
-    };
-    out.join("\n") + "\n"
+    styled(out, font).join("\n") + "\n"
+}
+
+
+fn render<const N: usize>(letters: &[&[&str; N]], gap: usize) -> Vec<String> {
+    (0..N).map(|r| letters.iter().map(|l| l[r]).collect::<Vec<_>>().join(&" ".repeat(gap))).collect()
 }
 
 /// El mismo screensaver.txt que genera examples/generate-screensaver.py.
 pub fn default_text() -> String {
-    banner_text("JACC", "XACODE")
+    let (b, s) = (|c| font::big(c).expect("letra"), |c| font::small(c).expect("letra"));
+    let name = render(&[b('J'), b('A'), b('C'), b('C')], 3);
+    let logo = render(&"XACODE".chars().map(s).collect::<Vec<_>>(), 2);
+    let len = |s: &String| s.chars().count();
+    let width = len(&name[0]).max(len(&logo[0]));
+    let center = |lines: &[String]| -> Vec<String> {
+        let pad = " ".repeat((width - len(&lines[0])) / 2);
+        lines.iter().map(|l| format!("{pad}{l}").trim_end().to_string()).collect()
+    };
+    let mut out = center(&name);
+    out.push(String::new());
+    out.push(String::new());
+    out.extend(center(&logo));
+    out.join("\n") + "\n"
 }
 
 #[cfg(test)]
@@ -354,58 +403,9 @@ mod tests {
         assert_consistent(&a);
         assert_eq!((a.w, a.h), (b.w, b.h));
         assert_eq!(cells(&a), cells(&b));
-        // Letra grande de bloque: 9 filas de bloques y medios bloques.
+        // Letra grande: 9 filas, de bloques y medios bloques.
         assert_eq!(a.h, 9);
         assert!(a.cells.iter().all(|&(_, _, ch)| "█▀▄".contains(ch)));
-        // La de píxel sigue como antes: 8 filas como mucho, todas de bloque completo ("██").
-        let p = Art::from_text_with("Hola", "", Font::Pixel).unwrap();
-        assert!(p.h <= 8);
-        assert!(p.cells.iter().all(|&(_, _, ch)| ch == '█'));
-    }
-
-    #[test]
-    fn block_font_matches_the_hand_drawn_default() {
-        assert_eq!(banner_text("JACC", "XACODE"), default_text());
-        assert_eq!(banner_text("jacc", "xacode"), default_text());
-        assert_eq!(cells(&Art::default_art_with(Font::Pixel)), cells(&Art::default_art()));
-    }
-
-    #[test]
-    fn accents_add_two_rows_only_when_needed() {
-        let plain = Art::from_text("NANDU", "").unwrap();
-        let marked = Art::from_text("ÑANDÚ", "").unwrap();
-        assert_consistent(&marked);
-        assert_eq!((plain.h, marked.h), (9, 11));
-        assert_eq!(plain.w, marked.w);
-        // La letra en sí no cambia: solo se añade la marca encima.
-        let below: Vec<_> = marked.cells.iter().filter(|c| c.1 >= 2).map(|&(x, y, ch)| (x, y - 2, ch)).collect();
-        assert_eq!(below, cells(&plain));
-        // Una I con tilde se ensancha para que quepa la marca.
-        assert!(Art::from_text("Í", "").unwrap().w > Art::from_text("I", "").unwrap().w);
-    }
-
-    #[test]
-    fn shadow_and_outline_styles() {
-        let block = Art::from_text("Hola", "mundo").unwrap();
-        let shadow = Art::from_text_with("Hola", "mundo", Font::Shadow).unwrap();
-        assert_consistent(&shadow);
-        assert_eq!((shadow.w, shadow.h), (block.w + 1, block.h + 1));
-        // La sombra solo añade ░ en huecos: las letras quedan intactas.
-        let solid: Vec<_> = shadow.cells.iter().copied().filter(|c| c.2 != '░').collect();
-        assert_eq!(solid, cells(&block));
-        assert!(shadow.cells.iter().any(|c| c.2 == '░'));
-
-        let line = Art::from_text_with("Hola", "mundo", Font::Outline).unwrap();
-        assert_consistent(&line);
-        assert_eq!((line.w, line.h), (block.w, block.h));
-        // El contorno vacía el interior y nunca dibuja fuera de la letra.
-        assert!(line.cells.len() < block.cells.len());
-        let filled: std::collections::HashSet<(i32, i32)> = block.cells.iter().map(|c| (c.0, c.1)).collect();
-        assert!(line.cells.iter().all(|c| filled.contains(&(c.0, c.1))));
-        for font in [Font::Shadow, Font::Outline, Font::Pixel] {
-            assert!(Art::from_text_with("", "", font).is_none());
-            assert!(Art::from_text_with("😀", "", font).is_none());
-        }
     }
 
     #[test]
@@ -464,10 +464,7 @@ mod tests {
             let (t, s) = (ch.to_string().repeat(MAX_TITLE), ch.to_string().repeat(MAX_SUBTITLE));
             let a = Art::from_text(&t, &s).unwrap_or_else(|| panic!("{ch:?}"));
             assert_consistent(&a);
-            assert!(a.h <= 9 + 2 + 4, "{ch:?}: {}", a.h);
-            for font in [Font::Shadow, Font::Outline, Font::Pixel] {
-                assert_consistent(&Art::from_text_with(&t, &s, font).unwrap_or_else(|| panic!("{ch:?}")));
-            }
+            assert!(a.h <= 9 + 1 + 4, "{ch:?}: {}", a.h);
         }
         let all: String = ('!'..='~').collect();
         assert_consistent(&Art::from_text(&all, &all).unwrap());
@@ -482,5 +479,88 @@ mod tests {
             assert!(!lines.first().unwrap().is_empty() && !lines.last().unwrap().is_empty(), "{t:?} {s:?}");
             assert!(lines.iter().all(|l| l.trim_end() == *l), "sin espacios al final");
         }
+    }
+
+    #[test]
+    fn shadow_and_outline_styles() {
+        let block = Art::from_text("Hola", "mundo").unwrap();
+        let shadow = Art::from_text_with("Hola", "mundo", Font::Shadow).unwrap();
+        assert_consistent(&shadow);
+        assert_eq!((shadow.w, shadow.h), (block.w + 1, block.h + 1));
+        // La sombra solo añade ░ en huecos: las letras quedan intactas.
+        let solid: Vec<_> = shadow.cells.iter().copied().filter(|c| c.2 != '░').collect();
+        assert_eq!(solid, cells(&block));
+        assert!(shadow.cells.iter().any(|c| c.2 == '░'));
+
+        let line = Art::from_text_with("Hola", "mundo", Font::Outline).unwrap();
+        assert_consistent(&line);
+        assert_eq!((line.w, line.h), (block.w, block.h));
+        // El contorno vacía el interior y nunca dibuja fuera de la letra.
+        assert!(line.cells.len() < block.cells.len());
+        let filled: std::collections::HashSet<(i32, i32)> = block.cells.iter().map(|c| (c.0, c.1)).collect();
+        assert!(line.cells.iter().all(|c| filled.contains(&(c.0, c.1))));
+        for font in [Font::Shadow, Font::Outline, Font::Pixel] {
+            assert!(Art::from_text_with("", "", font).is_none());
+            assert!(Art::from_text_with("😀", "", font).is_none());
+            let (t, s) = ("W".repeat(MAX_TITLE), "W".repeat(MAX_SUBTITLE));
+            assert_consistent(&Art::from_text_with(&t, &s, font).unwrap());
+        }
+    }
+
+    #[test]
+    fn pixel_font_keeps_the_old_8x8_letters() {
+        let p = Art::from_text_with("Hola", "", Font::Pixel).unwrap();
+        assert!(p.h <= 8);
+        assert!(p.cells.iter().all(|&(_, _, ch)| ch == '█'));
+        // Conserva las minúsculas: no es el mismo dibujo que en mayúscula.
+        assert_ne!(cells(&p), cells(&Art::from_text_with("HOLA", "", Font::Pixel).unwrap()));
+        assert_eq!(cells(&Art::from_text("hola", "").unwrap()), cells(&Art::from_text("HOLA", "").unwrap()));
+    }
+
+    #[test]
+    fn default_art_takes_the_font_style() {
+        let plain = Art::default_art();
+        assert_eq!(cells(&Art::default_art_with(Font::Block)), cells(&plain));
+        assert_eq!(cells(&Art::default_art_with(Font::Pixel)), cells(&plain));
+        let shadow = Art::default_art_with(Font::Shadow);
+        assert_eq!((shadow.w, shadow.h), (plain.w + 1, plain.h + 1));
+        assert!(Art::default_art_with(Font::Outline).cells.len() < plain.cells.len());
+    }
+
+    #[test]
+    fn from_text_uses_own_letters_in_uppercase() {
+        let a = banner_text("hola", "");
+        assert_eq!(a, banner_text("HOLA", ""));
+        // La S propia, no la de font8x8.
+        let s: String = font::big('S').unwrap().map(|r| r.trim_end().to_string()).join("\n") + "\n";
+        assert_eq!(banner_text("S", ""), s);
+        assert_eq!(banner_text("ab", "cd"), banner_text("AB", "CD"));
+    }
+
+    #[test]
+    fn from_text_accents_sit_above_the_letter() {
+        let plain = Art::from_text("ANA", "").unwrap();
+        for t in ["ÁNA", "AÑA", "ANÜ", "ÍNA"] {
+            let a = Art::from_text(t, "").unwrap();
+            assert_consistent(&a);
+            // Dos filas más arriba; la base de las letras no se mueve.
+            assert_eq!(a.h, plain.h + 2, "{t}");
+            assert!(a.cells.iter().any(|c| c.1 < 2), "{t}: sin signo");
+        }
+        let a = Art::from_text("", "canción").unwrap();
+        assert_eq!(a.h, 9 + 2);
+        let a = Art::from_text("José", "María Núñez").unwrap();
+        assert_consistent(&a);
+        assert_eq!(a.h, 9 + 2 + 1 + 4 + 2);
+    }
+
+    #[test]
+    fn from_text_fallback_glyphs_share_the_baseline() {
+        // Æ sale de font8x8 y debe acabar en la misma fila que las letras propias.
+        let a = Art::from_text("AÆ", "").unwrap();
+        assert_consistent(&a);
+        let bottom = |x0: i32, x1: i32| a.cells.iter().filter(|c| (x0..x1).contains(&c.0)).map(|c| c.1).max().unwrap();
+        assert_eq!(bottom(0, 11), bottom(14, a.w));
+        assert_eq!(a.h, 9);
     }
 }

@@ -10,7 +10,15 @@ use ssfx_core::fx::EFFECTS;
 use ssfx_core::{Config, Engine, WallTime};
 use std::time::Instant;
 
-const RES: [(i32, i32, &str); 3] = [(1920, 1080, "1080p"), (2560, 1440, "1440p"), (3840, 2160, "4K")];
+const RES: [(i32, i32, &str); 7] = [
+    (800, 600, "SVGA"),
+    (1366, 768, "768p"),
+    (1920, 1080, "1080p"),
+    (2560, 1440, "1440p"),
+    (3440, 1440, "UW"),
+    (3840, 2160, "4K"),
+    (7680, 4320, "8K"),
+];
 
 fn pct(sorted: &[f64], p: f64) -> f64 {
     sorted[((sorted.len() - 1) as f64 * p).round() as usize]
