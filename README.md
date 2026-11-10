@@ -1,6 +1,6 @@
 # Screensaver FX
 
-Protector de pantalla nativo para Windows (`.scr`) y macOS (`.saver`) con las animaciones del screensaver de Omarchy y 16 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino. No usa ningún motor web y ocupa unos 5 MB de RAM.
+Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 16 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 22 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM.
 
 ## Instalar
 
@@ -43,6 +43,35 @@ El instalador no está firmado, así que SmartScreen puede avisar: «Más inform
 
 El paquete no está notarizado. Si macOS lo bloquea, ve a Ajustes del Sistema › Privacidad y seguridad › «Abrir igualmente». Con el método de la terminal no aparece el aviso.
 
+### Linux (Omarchy)
+
+Requisitos: Omarchy con `ttfx` y, para compilar, [rustup](https://rustup.rs). Sin Rust, el instalador descarga el binario de la última release.
+
+```bash
+git clone https://github.com/thealejandro/screensaver-fx && cd screensaver-fx
+./linux/install.sh
+```
+
+Para actualizar, `git pull` y volver a ejecutar `./linux/install.sh`. Para quitarlo, `./linux/uninstall.sh`.
+
+No modifica nada de Omarchy: copia el binario `screensaver-fx` y dos envoltorios (`ttfx` y `omarchy-screensaver`) a `~/.local/bin`, que va antes que `/usr/bin` en el PATH. El salvapantallas de Omarchy sigue llamando a `ttfx`; el envoltorio decide en cada ciclo entre una animación de Screensaver FX y un efecto de ttfx (con sus colores o con los del tema). Si una actualización de Omarchy cambia cómo lanza el protector, el envoltorio deja pasar la llamada tal cual y el protector vuelve a ser el original, sin romperse. Tras cada `omarchy update` un hook comprueba que todo sigue encajando y avisa con una notificación si hay algo que adaptar (detalle en `~/.local/state/omarchy/screensaver-check.log`).
+
+Sin configuración usa lo que ya tiene Omarchy: el rótulo de `~/.config/omarchy/branding/screensaver.txt` y los colores del tema activo. Para cambiarlo, `~/.config/screensaver-fx/config.ini` admite las mismas claves que en Windows (`banner`, `title`, `subtitle`, `font`, `theme`, `effects`, `lang`) y una propia:
+
+| Clave | Qué hace |
+| --- | --- |
+| `own=35` | Porcentaje de ciclos con animación de Screensaver FX; el resto son efectos de ttfx |
+
+Para que los efectos de ttfx muestren el mismo rótulo de texto:
+
+```bash
+screensaver-fx --write-banner "Título" "subtítulo" --font shadow
+```
+
+Guarda el rótulo en `screensaver.txt` (el anterior queda en `screensaver.txt.bak`) y, si una actualización de Omarchy lo pisa con su logo, el hook lo vuelve a generar.
+
+El binario también funciona suelto en cualquier terminal con color de 24 bits, en Linux o macOS: `screensaver-fx --loop` (Ctrl+C para salir), `screensaver-fx plasma`, `screensaver-fx --list`.
+
 ## Compilar
 
 ### macOS
@@ -66,13 +95,19 @@ ISCC installer\windows\ScreensaverFX.iss          # dist\ScreensaverFX-Setup-<ve
 
 Argumentos del `.scr`: `/s` pantalla completa, `/p <hwnd>` vista previa, `/c` configuración, `/w` ventana de prueba. La configuración vive en `%APPDATA%\ScreensaverFX\config.ini`.
 
+### Linux
+
+```bash
+cargo build -p ssfx-term --release     # target/release/screensaver-fx
+```
+
 ### Publicar una versión
 
 ```bash
 git tag v0.1.0 && git push --tags
 ```
 
-GitHub Actions compila Windows (x64 + ARM64) y macOS (universal) y sube los instaladores a Releases.
+GitHub Actions compila Windows (x64 + ARM64), macOS (universal) y Linux (x86_64 + aarch64, estático) y sube los instaladores y binarios a Releases.
 
 ## Rótulo y letra
 
@@ -85,7 +120,7 @@ El rótulo puede ser el de por defecto, un texto propio (`banner=text` con `titl
 | `outline` | Solo el contorno del título |
 | `pixel` | Letra de píxel 8x8 de las versiones anteriores (conserva las minúsculas) |
 
-De momento `font` no tiene control en las ventanas de configuración: se escribe a mano en `%APPDATA%\ScreensaverFX\config.ini` (Windows) o con `defaults -currentHost write` sobre la clave `font` del módulo (macOS). Guardar desde la ventana conserva el valor.
+De momento `font` no tiene control en las ventanas de configuración: se escribe a mano en `%APPDATA%\ScreensaverFX\config.ini` (Windows), en `~/.config/screensaver-fx/config.ini` (Linux) o con `defaults -currentHost write` sobre la clave `font` del módulo (macOS). Guardar desde la ventana conserva el valor.
 
 ## Herramientas
 
