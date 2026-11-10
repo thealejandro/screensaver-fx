@@ -1,6 +1,7 @@
 //! Efectos: cada uno dibuja la rejilla completa en cada fotograma a partir de su tiempo local.
 
 mod classic;
+mod extra;
 mod modern;
 
 use crate::art::Art;
@@ -56,7 +57,7 @@ macro_rules! fx {
     };
 }
 
-pub static EFFECTS: [FxDef; 16] = [
+pub static EFFECTS: [FxDef; 22] = [
     fx!(c"neon", c"Neón", c"Neon", 14.0, true, classic::neon),
     fx!(c"starfield", c"Estrellas", c"Starfield", 16.0, true, classic::starfield),
     fx!(c"terminal", c"Terminal", c"Terminal", 10.0, true, classic::terminal),
@@ -73,6 +74,12 @@ pub static EFFECTS: [FxDef; 16] = [
     fx!(c"waves", c"Olas", c"Waves", 12.0, false, modern::waves),
     fx!(c"spotlights", c"Focos", c"Spotlights", 12.0, false, modern::spotlights),
     fx!(c"wipe", c"Barrido", c"Wipe", 10.0, false, modern::wipe),
+    fx!(c"fireworks", c"Fuegos artificiales", c"Fireworks", 13.0, false, extra::fireworks),
+    fx!(c"vortex", c"Remolino", c"Vortex", 11.0, false, extra::vortex),
+    fx!(c"bounce", c"Rebote", c"Bounce", 10.0, false, extra::bounce),
+    fx!(c"laser", c"Láser", c"Laser", 10.5, false, extra::laser),
+    fx!(c"crystal", c"Cristal", c"Crystal", 11.0, false, extra::crystal),
+    fx!(c"ripple", c"Onda", c"Ripple", 11.0, false, extra::ripple),
 ];
 
 pub fn fx_index(id: &str) -> Option<usize> {
