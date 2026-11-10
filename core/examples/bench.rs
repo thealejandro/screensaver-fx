@@ -46,9 +46,8 @@ fn main() {
                 let s = Instant::now();
                 e.tick(t, now);
                 times.push(s.elapsed().as_secs_f64() * 1000.0);
-                if let Some((_, _, dw, dh)) = e.dirty() {
-                    dirty += dw as f64 * dh as f64 / area;
-                }
+                // Lo que de verdad se copia: la suma de las franjas cambiadas.
+                dirty += e.dirty_rects().iter().map(|&(_, _, w, h)| w as f64 * h as f64).sum::<f64>() / area;
             }
             times.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let p99 = pct(&times, 0.99);

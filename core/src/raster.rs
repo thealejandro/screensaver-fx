@@ -53,7 +53,7 @@ impl Raster {
             let (mut rx0, mut rx1) = (usize::MAX, 0);
             for (cx, cell) in row.iter().enumerate() {
                 let i = cy * self.cols + cx;
-                if *cell == self.prev[i] {
+                if looks_same(*cell, self.prev[i]) {
                     continue;
                 }
                 self.prev[i] = *cell;
@@ -115,6 +115,16 @@ impl Raster {
             }
         }
     }
+}
+
+/// Diferencia de color por canal que no se nota y no merece volver a copiar la celda.
+const COLOR_SLACK: u32 = 3;
+
+/// Dos celdas se ven igual: mismo carácter y casi el mismo color (un espacio no tiene color).
+/// Así los fundidos lentos no copian toda la pantalla en cada cuadro; el color dibujado nunca se
+/// aleja más de `COLOR_SLACK` del real, porque `prev` guarda lo que de verdad está pintado.
+fn looks_same(a: Cell, b: Cell) -> bool {
+    a.ch == b.ch && (a.ch == ' ' || [0, 8, 16].iter().all(|&s| (a.fg >> s & 0xFF).abs_diff(b.fg >> s & 0xFF) <= COLOR_SLACK))
 }
 
 /// Bitmap de 8x8 escrito como texto ('#' encendido), colocado en las filas 4..12.
@@ -380,7 +390,9 @@ mod tests {
                 g.put(x, y, CHARS[rng.below(CHARS.len())], col);
             }
             let changed = r.update(&g);
-            assert_eq!(r.px, fresh(&g), "fotograma {frame}");
+            // Igual que dibujar de cero, salvo diferencias de color que no se ven.
+            let near = |a: u32, b: u32| [0, 8, 16].iter().all(|&s| (a >> s & 0xFF).abs_diff(b >> s & 0xFF) <= COLOR_SLACK);
+            assert!(r.px.iter().zip(fresh(&g)).all(|(&a, b)| near(a, b)), "fotograma {frame}");
             assert_eq!(changed, r.dirty.is_some());
             // Fuera del rectángulo sucio nada cambió.
             let (dx, dy, dw, dh) = r.dirty.map(|(x, y, w, h)| (x as usize, y as usize, w as usize, h as usize)).unwrap_or((0, 0, 0, 0));
