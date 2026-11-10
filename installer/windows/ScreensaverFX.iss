@@ -4,7 +4,7 @@
 ; Las imágenes y el icono los genera: cargo run -p ssfx-core --example brand --release
 
 #ifndef AppVersion
-  #define AppVersion "0.1.3"
+  #define AppVersion "0.1.4"
 #endif
 #ifndef X64Bin
   #define X64Bin "..\..\target\release\ScreensaverFX.exe"
