@@ -5,6 +5,7 @@ pub mod art;
 pub mod color;
 pub mod config;
 pub mod desk;
+pub mod font;
 pub mod ffi;
 pub mod fx;
 pub mod grid;
