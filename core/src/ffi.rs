@@ -1,6 +1,7 @@
 //! ABI de C para el envoltorio de macOS (Swift). Ver include/ssfx.h.
 
 use crate::color::{Rgb, THEMES};
+use crate::desk::Screen;
 use crate::fx::EFFECTS;
 use crate::{Config, Engine, WallTime};
 use core::ffi::{c_char, CStr};
@@ -24,6 +25,19 @@ pub unsafe extern "C" fn ssfx_new(px_w: i32, px_h: i32, ini: *const c_char, art:
     let mut cfg = Config::parse(&opt_str(ini).unwrap_or_default(), Rgb::hex(accent), seed, sys_lang_es != 0);
     cfg.art = opt_str(art).filter(|s| !s.trim().is_empty());
     Box::into_raw(Box::new(Engine::new(px_w, px_h, cfg)))
+}
+
+/// Como `ssfx_new`, pero para la pantalla `me` de un escritorio con `n` pantallas. Todas las
+/// pantallas deben usar la misma semilla y el mismo `t` para ir sincronizadas.
+///
+/// # Safety
+/// Lo de `ssfx_new`; además `screens` debe ser NULL o apuntar a `n` `SsfxScreen` válidos.
+#[no_mangle]
+pub unsafe extern "C" fn ssfx_new_desk(screens: *const Screen, n: i32, me: i32, ini: *const c_char, art: *const c_char, accent: u32, seed: u64, sys_lang_es: i32) -> *mut Engine {
+    let mut cfg = Config::parse(&opt_str(ini).unwrap_or_default(), Rgb::hex(accent), seed, sys_lang_es != 0);
+    cfg.art = opt_str(art).filter(|s| !s.trim().is_empty());
+    let list: &[Screen] = if screens.is_null() || n <= 0 { &[] } else { core::slice::from_raw_parts(screens, n.min(64) as usize) };
+    Box::into_raw(Box::new(Engine::with_desk(list, me.max(0) as usize, cfg)))
 }
 
 /// Libera el motor.

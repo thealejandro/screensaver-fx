@@ -160,10 +160,46 @@ fn header_declares_every_exported_function() {
     let h = include_str!("../../include/ssfx.h");
     let src = include_str!("../src/ffi.rs");
     let exported: Vec<&str> = src.lines().filter_map(|l| l.split("extern \"C\" fn ").nth(1)).map(|r| r.split('(').next().unwrap()).collect();
-    assert_eq!(exported.len(), 11, "{exported:?}");
+    assert_eq!(exported.len(), 12, "{exported:?}");
     for name in exported {
         assert!(h.contains(&format!("{name}(")), "{name} no está en include/ssfx.h");
     }
-    // WallTime: mismo número de campos i32 que SsfxWallTime.
+    // WallTime: mismo número de campos i32 que SsfxWallTime; Screen: 4 double y 2 int32_t.
+    assert_eq!(std::mem::size_of::<ssfx_core::desk::Screen>(), 4 * 8 + 2 * 4);
     assert_eq!(std::mem::size_of::<WallTime>(), 7 * 4);
+}
+
+#[test]
+fn desk_engines_stay_in_sync() {
+    use ssfx_core::desk::Screen;
+    // Dos pantallas iguales lado a lado: los efectos locales salen idénticos en las dos.
+    let s = [Screen { x: 0.0, y: 0.0, w: 1280.0, h: 720.0, px_w: 1280, px_h: 720 }, Screen { x: 1280.0, y: 0.0, w: 1280.0, h: 720.0, px_w: 1280, px_h: 720 }];
+    let ini = CString::new("effects=plasma").unwrap();
+    unsafe {
+        let es: Vec<_> = (0..2).map(|i| ssfx_new_desk(s.as_ptr(), 2, i, ini.as_ptr(), ptr::null(), 0, 9, 1)).collect();
+        for k in 0..120 {
+            for &e in &es {
+                ssfx_tick(e, k as f64 / 30.0, &NOW);
+            }
+        }
+        let px = |e| {
+            let (mut w, mut h) = (0, 0);
+            let p = ssfx_pixels(e, &mut w, &mut h);
+            std::slice::from_raw_parts(p, (w * h) as usize).to_vec()
+        };
+        assert_eq!(px(es[0]), px(es[1]));
+        for e in es {
+            ssfx_free(e);
+        }
+        // Lista NULL, n negativo o `me` fuera de rango: un motor de 1x1 que sigue funcionando.
+        for (p, n, me) in [(ptr::null(), 2, 0), (s.as_ptr(), -1, 0), (s.as_ptr(), 2, 9), (s.as_ptr(), 2, -3)] {
+            let e = ssfx_new_desk(p, n, me, ptr::null(), ptr::null(), 0, 1, 0);
+            assert!(!e.is_null());
+            for k in 0..20 {
+                ssfx_tick(e, k as f64 / 10.0, ptr::null());
+            }
+            assert!(!ssfx_pixels(e, ptr::null_mut(), ptr::null_mut()).is_null());
+            ssfx_free(e);
+        }
+    }
 }
