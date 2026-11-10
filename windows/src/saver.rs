@@ -11,7 +11,7 @@ use std::time::Instant;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Dwm::DwmFlush;
 use windows_sys::Win32::Graphics::Gdi::*;
-use windows_sys::Win32::System::Power::{RegisterPowerSettingNotification, UnregisterPowerSettingNotification, POWERBROADCAST_SETTING};
+use windows_sys::Win32::System::Power::{GetSystemPowerStatus, RegisterPowerSettingNotification, UnregisterPowerSettingNotification, POWERBROADCAST_SETTING, SYSTEM_POWER_STATUS};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::Sleep;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
@@ -33,6 +33,18 @@ thread_local! {
 
 /// Fotogramas como mucho cada 12,5 ms: 60 fps en 60/120 Hz, ~72 en 144 Hz.
 const MIN_FRAME: f64 = 0.0125;
+/// Con el portátil desenchufado, como mucho ~30 fps: algo menos de dos cuadros a 60 Hz para que
+/// no caiga a 20 por un milisegundo de más. Enchufado va a la velocidad de siempre.
+const BATTERY_FRAME: f64 = 0.030;
+/// Cada cuánto se mira si el equipo sigue con batería.
+const POWER_CHECK: f64 = 5.0;
+
+/// El equipo funciona con batería (un sobremesa, o si Windows no lo sabe, cuenta como enchufado).
+fn on_battery() -> bool {
+    let mut ps: SYSTEM_POWER_STATUS = unsafe { core::mem::zeroed() };
+    let ok = unsafe { GetSystemPowerStatus(&mut ps) } != 0;
+    ok && ps.ACLineStatus == 0
+}
 const MOUSE_SLOP: i32 = 6;
 /// GUID_CONSOLE_DISPLAY_STATE: avisa cuando la pantalla se apaga (0), se enciende (1) o se atenúa (2).
 const DISPLAY_STATE: windows_sys::core::GUID = windows_sys::core::GUID::from_u128(0x6fe69556_704a_47a0_8f24_c28d936fda47);
@@ -325,6 +337,7 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
         let mut prof = Profile::from_env();
         let t0 = Instant::now();
         let mut last = f64::NEG_INFINITY;
+        let (mut battery, mut power_checked) = (false, f64::NEG_INFINITY);
         let mut msg: MSG = core::mem::zeroed();
         'main: loop {
             while PeekMessageW(&mut msg, core::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
@@ -349,7 +362,11 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
                 continue;
             }
             let t = t0.elapsed().as_secs_f64();
-            if t - last >= MIN_FRAME {
+            if t - power_checked >= POWER_CHECK {
+                power_checked = t;
+                battery = on_battery();
+            }
+            if t - last >= if battery { BATTERY_FRAME } else { MIN_FRAME } {
                 if let Some(p) = prof.as_mut().filter(|_| last.is_finite()) {
                     p.gap.push(((t - last) * 1000.0) as f32);
                 }
