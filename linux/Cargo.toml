@@ -1,6 +1,6 @@
 [package]
 name = "ssfx-term"
-version = "0.1.1"
+version = "0.1.3"
 edition = "2021"
 description = "Screensaver FX en una terminal: Linux (Omarchy) y cualquier terminal con color de 24 bits"
 license = "MIT"
