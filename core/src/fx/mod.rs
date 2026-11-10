@@ -1,6 +1,7 @@
 //! Efectos: cada uno dibuja la rejilla completa en cada fotograma a partir de su tiempo local.
 
 mod classic;
+mod extra;
 mod modern;
 mod multi;
 
@@ -60,7 +61,7 @@ macro_rules! fx {
     };
 }
 
-pub static EFFECTS: [FxDef; 19] = [
+pub static EFFECTS: [FxDef; 23] = [
     fx!(c"neon", c"Neón", c"Neon", 14.0, true, classic::neon),
     fx!(c"starfield", c"Estrellas", c"Starfield", 16.0, true, classic::starfield),
     fx!(c"terminal", c"Terminal", c"Terminal", 10.0, true, classic::terminal),
@@ -80,6 +81,10 @@ pub static EFFECTS: [FxDef; 19] = [
     fx!(c"relay", c"Relevo", c"Relay", 13.0, false, multi::relay),
     fx!(c"comet", c"Cometa", c"Comet", 12.0, false, multi::comet),
     fx!(c"tide", c"Marea", c"Tide", 12.0, false, multi::tide),
+    fx!(c"vortex", c"Remolino", c"Vortex", 12.0, false, extra::vortex),
+    fx!(c"ripple", c"Gota", c"Ripple", 11.0, false, extra::ripple),
+    fx!(c"fireflies", c"Luciérnagas", c"Fireflies", 13.0, false, extra::fireflies),
+    fx!(c"aurora", c"Aurora", c"Aurora", 13.0, false, extra::aurora),
 ];
 
 pub fn fx_index(id: &str) -> Option<usize> {
@@ -334,7 +339,7 @@ mod tests {
 
     #[test]
     fn random_effects_depend_on_the_seed() {
-        for id in ["neon", "starfield", "decrypt", "rain", "scatter", "matrix", "burn"] {
+        for id in ["neon", "starfield", "decrypt", "rain", "scatter", "matrix", "burn", "vortex", "fireflies", "aurora"] {
             let def = &EFFECTS[fx_index(id).unwrap()];
             let frame = |seed| {
                 let mut c = ctx(90, 30, Art::default_art(), seed);
