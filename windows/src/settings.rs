@@ -179,6 +179,8 @@ thread_local! {
     static SAVED: Cell<bool> = const { Cell::new(false) };
     /// Hay cambios sin guardar.
     static DIRTY: Cell<bool> = const { Cell::new(false) };
+    /// Aviso sobre la configuración leída (p. ej. un tema que no existe); se borra al guardar.
+    static NOTE: RefCell<String> = const { RefCell::new(String::new()) };
     static UPD: RefCell<Upd> = RefCell::new(Upd::default());
 }
 
@@ -588,6 +590,13 @@ unsafe fn paint(hwnd: HWND) {
                 let ok = wide(tr("✓  Cambios guardados", "✓  Changes saved"));
                 let x0 = PAD + 128 + GAP;
                 draw_text(dc, u.font, pal.text, &ok, &r(x0, BUTTONS_Y, W - PAD - 2 * 112 - 8 - GAP - x0, CTL_H), DT_RIGHT | DT_VCENTER);
+            } else {
+                let note = NOTE.with(|n| n.borrow().clone());
+                if !note.is_empty() {
+                    let x0 = PAD + 128 + GAP;
+                    let note = wide(&note);
+                    draw_text(dc, u.font_small, pal.dim, &note, &r(x0, BUTTONS_Y, W - PAD - 2 * 112 - 8 - GAP - x0, CTL_H), DT_RIGHT | DT_VCENTER);
+                }
             }
             // Tarjetas: opciones, vista previa y activación.
             for card in [r(PAD, CARD_Y, LEFT_W, CARD_H), r(RIGHT_X, CARD_Y, RIGHT_W, CARD_H), r(PAD, ACT_Y, W - 2 * PAD, ACT_H)] {
@@ -858,6 +867,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 IDOK => {
                     if save(hwnd) {
                         DIRTY.set(false);
+                        NOTE.with(|n| n.borrow_mut().clear());
                         SAVED.set(true);
                         let t = wide(tr("Cerrar", "Close"));
                         SetWindowTextW(item(hwnd, IDCANCEL), t.as_ptr());
@@ -1139,7 +1149,19 @@ pub fn run(owner: Option<HWND>) {
         b.label(-1, tr("Colores", "Colors"), x, y, w);
         let mut themes = vec![tr("Color de acento de Windows", "Windows accent color").to_string(), tr("Aleatorio (cambia en cada efecto)", "Random (changes every effect)").to_string()];
         themes.extend(THEMES.iter().map(|t| t.name_str().to_string()));
-        let tsel = theme_values().iter().position(|v| v.eq_ignore_ascii_case(&get("theme"))).unwrap_or(0);
+        let theme = get("theme");
+        let theme = theme.trim();
+        let tsel = theme_values().iter().position(|v| v.eq_ignore_ascii_case(theme));
+        // Un tema que no existe (config.ini editado a mano) se usa como «color de acento»: se avisa.
+        if tsel.is_none() && !theme.is_empty() && !theme.eq_ignore_ascii_case("system") {
+            let msg = if ES.get() {
+                format!("Tema «{theme}» desconocido: se usa el de acento.")
+            } else {
+                format!("Unknown theme \"{theme}\": using the accent color.")
+            };
+            NOTE.with(|n| *n.borrow_mut() = msg);
+        }
+        let tsel = tsel.unwrap_or(0);
         b.combo(ID_THEME, x, y + LABEL_H, w, &themes, tsel);
         y += STEP;
         b.label(-1, tr("Efectos", "Effects"), x, y, w);

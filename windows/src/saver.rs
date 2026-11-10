@@ -1,5 +1,6 @@
 //! Modo protector (/s) y vista previa (/p): una ventana por monitor, cada una con su motor.
-//! Dibuja con StretchDIBits solo el rectángulo que cambió y se sincroniza con DwmFlush.
+//! Dibuja con StretchDIBits solo el rectángulo que cambió, se sincroniza con DwmFlush y se
+//! detiene mientras Windows tiene la pantalla apagada.
 
 use crate::sys;
 use ssfx_core::color::Rgb;
@@ -10,6 +11,7 @@ use std::time::Instant;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Dwm::DwmFlush;
 use windows_sys::Win32::Graphics::Gdi::*;
+use windows_sys::Win32::System::Power::{RegisterPowerSettingNotification, UnregisterPowerSettingNotification, POWERBROADCAST_SETTING};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::Sleep;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
@@ -25,11 +27,15 @@ thread_local! {
     static SAVERS: RefCell<Vec<Saver>> = const { RefCell::new(Vec::new()) };
     static PREVIEW: Cell<bool> = const { Cell::new(false) };
     static START: Cell<POINT> = const { Cell::new(POINT { x: 0, y: 0 }) };
+    /// Windows apagó la pantalla: no se dibuja nada hasta que vuelva.
+    static DISPLAY_OFF: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Fotogramas como mucho cada 12,5 ms: 60 fps en 60/120 Hz, ~72 en 144 Hz.
 const MIN_FRAME: f64 = 0.0125;
 const MOUSE_SLOP: i32 = 6;
+/// GUID_CONSOLE_DISPLAY_STATE: avisa cuando la pantalla se apaga (0), se enciende (1) o se atenúa (2).
+const DISPLAY_STATE: windows_sys::core::GUID = windows_sys::core::GUID::from_u128(0x6fe69556_704a_47a0_8f24_c28d936fda47);
 
 /// Perfilado opcional (`SSFX_PROFILE=<archivo>`): al salir escribe p50/p99/máximo del motor, del
 /// dibujado y del intervalo entre cuadros, y cuántos cuadros llegaron tarde (> 1,5 veces el
@@ -182,6 +188,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             return 0;
         }
+        WM_POWERBROADCAST if wp as u32 == PBT_POWERSETTINGCHANGE && lp != 0 => {
+            let s = &*(lp as *const POWERBROADCAST_SETTING);
+            let (g, d) = (&s.PowerSetting, &DISPLAY_STATE);
+            if (g.data1, g.data2, g.data3, g.data4) == (d.data1, d.data2, d.data3, d.data4) && s.DataLength >= 1 {
+                DISPLAY_OFF.set(s.Data[0] == 0);
+            }
+            return 1;
+        }
         WM_ACTIVATEAPP if !preview && wp == 0 => quit(),
         WM_SYSCOMMAND if !preview && matches!((wp & 0xFFF0) as u32, SC_SCREENSAVE | SC_CLOSE) => return 0,
         WM_CLOSE => {
@@ -294,6 +308,9 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             hooks = [SetWindowsHookExW(WH_KEYBOARD_LL, Some(key_hook), hinst, 0), SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), hinst, 0)];
         }
 
+        // Con la pantalla apagada no tiene sentido dibujar: el bucle espera mensajes sin gastar CPU.
+        let power = RegisterPowerSettingNotification(first as HANDLE, &DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
+
         let mut prof = Profile::from_env();
         let t0 = Instant::now();
         let mut last = f64::NEG_INFINITY;
@@ -310,6 +327,15 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
                 if IsWindow(p) == 0 {
                     break;
                 }
+            }
+            if DISPLAY_OFF.get() {
+                // Al volver la pantalla se repinta todo y el motor se pone al día con el reloj.
+                WaitMessage();
+                if !DISPLAY_OFF.get() {
+                    SAVERS.with(|v| v.borrow().iter().for_each(|s| _ = InvalidateRect(s.hwnd, core::ptr::null(), FALSE)));
+                    last = f64::NEG_INFINITY;
+                }
+                continue;
             }
             let t = t0.elapsed().as_secs_f64();
             if t - last >= MIN_FRAME {
@@ -338,6 +364,9 @@ pub fn run(parent: Option<HWND>, windowed: bool) {
             if DwmFlush() < 0 {
                 Sleep(8);
             }
+        }
+        if power != 0 {
+            UnregisterPowerSettingNotification(power);
         }
         for h in hooks.into_iter().filter(|h| !h.is_null()) {
             UnhookWindowsHookEx(h);
