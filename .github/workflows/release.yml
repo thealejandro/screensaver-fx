@@ -133,7 +133,7 @@ jobs:
         run: |
           BIN="$PWD/dist/screensaver-fx-linux-${{ matrix.arch }}"
           ! ldd "$BIN" 2>/dev/null | grep -q '=>' || { echo "::error::el binario no es estático"; exit 1; }
-          [ "$("$BIN" --list | wc -l)" -ge 29 ]
+          [ "$("$BIN" --list | wc -l)" -ge 32 ]
           "$BIN" --banner "QA" "linux" --font shadow | grep -q '█'
           # 2,2 s: el núcleo garantiza (y prueba) que todo efecto ha pintado algo a los 2 s; con
           # menos, los que arrancan con retardo al azar (beams) pueden no haber empezado.

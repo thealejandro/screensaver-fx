@@ -1,6 +1,6 @@
 # Screensaver FX
 
-Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 23 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 29 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
+Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 26 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 32 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
 
 ## Instalar
 

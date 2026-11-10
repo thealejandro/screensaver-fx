@@ -102,8 +102,6 @@ fn null_arguments_are_safe() {
 #[test]
 fn degenerate_sizes() {
     for (w, h) in [(0, 0), (1, 1), (-5, -5), (10, 10), (1, 1080)] {
-        // 1,5 s: el efecto sale al azar y algunos (aurora, wipe, beams) tardan hasta 1 s en
-        // pintar su primer cuadro; con 0,5 s el resultado dependía de cuál tocara.
         let (bw, bh, _, _, dest, down) = run(w, h, None, None, 1.5);
         assert!(bw > 0 && bh > 0);
         assert_eq!(down, 1, "{w}x{h}");
