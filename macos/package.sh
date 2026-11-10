@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Empaqueta para distribuir: dist/ScreensaverFX-macOS.zip y dist/ScreensaverFX-<versión>.pkg
+# Empaqueta para distribuir: dist/ScreensaverFX-macOS.zip, dist/ScreensaverFX-<versión>.pkg y .dmg
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,4 +28,54 @@ sed "s/__VERSION__/$VER/" installer/macos/distribution.xml > "$WORK/distribution
 productbuild --distribution "$WORK/distribution.xml" --resources "$WORK/resources" \
   --package-path "$WORK" "dist/ScreensaverFX-$VER.pkg"
 cp "dist/ScreensaverFX-$VER.pkg" dist/ScreensaverFX.pkg
-echo "Listo: dist/ScreensaverFX-macOS.zip y dist/ScreensaverFX-$VER.pkg"
+
+# .dmg para instalar arrastrando: el .saver y un acceso a /Library/Screen Savers (para todos;
+# Finder pide la contraseña). Fondo y posiciones salen de core/examples/brand.rs (DMG_ICONS).
+DMG=target/macos/dmg
+VOL="Screensaver FX"
+rm -rf "$DMG" && mkdir -p "$DMG/src/.background"
+cp -R "$SAVER" "$DMG/src/"
+ln -s "/Library/Screen Savers" "$DMG/src/Screen Savers"
+tiffutil -cathidpicheck installer/assets/dmg-background.png installer/assets/dmg-background@2x.png \
+  -out "$DMG/src/.background/background.tiff"
+hdiutil create -quiet -volname "$VOL" -srcfolder "$DMG/src" -fs HFS+ -format UDRW -ov "$DMG/rw.dmg"
+# Si ya hubiera uno montado con el mismo nombre, Finder no sabría cuál decorar.
+[ -d "/Volumes/$VOL" ] && hdiutil detach -quiet "/Volumes/$VOL" || true
+DEV=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG/rw.dmg" | awk '/Apple_HFS/ {print $1}')
+# Diseño de la ventana con Finder. Sin sesión gráfica (o si Finder no responde en 90 s) el .dmg
+# sigue siendo válido, solo que sin fondo ni posiciones.
+osascript >/dev/null <<EOF &
+tell application "Finder"
+  tell disk "$VOL"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 120, 840, 548}
+    set o to the icon view options of container window
+    set arrangement of o to not arranged
+    set icon size of o to 112
+    set text size of o to 13
+    set background picture of o to file ".background:background.tiff"
+    set position of item "ScreensaverFX.saver" of container window to {170, 235}
+    set position of item "Screen Savers" of container window to {470, 235}
+    close
+    open
+    update without registering applications
+    delay 2
+    close
+  end tell
+end tell
+EOF
+OSA=$!
+( sleep 90 && kill $OSA ) >/dev/null 2>&1 &
+WATCH=$!
+wait $OSA && echo "Ventana del .dmg diseñada" || echo "aviso: Finder no diseñó la ventana del .dmg"
+kill $WATCH 2>/dev/null || true
+rm -rf "/Volumes/$VOL/.fseventsd"
+sync
+hdiutil detach -quiet "$DEV" || hdiutil detach -quiet -force "$DEV"
+rm -f "dist/ScreensaverFX-$VER.dmg"
+hdiutil convert -quiet "$DMG/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "dist/ScreensaverFX-$VER.dmg"
+cp "dist/ScreensaverFX-$VER.dmg" dist/ScreensaverFX.dmg
+echo "Listo: dist/ScreensaverFX-macOS.zip, dist/ScreensaverFX-$VER.pkg y dist/ScreensaverFX-$VER.dmg"

@@ -49,6 +49,11 @@ impl Canvas {
     }
 
     fn background(&mut self, seed: u64) {
+        self.starfield(seed, 450, (self.w / 160).max(1) as i32);
+    }
+
+    /// Degradado de fondo con una estrella por cada `per` píxeles, de `dot` píxeles de lado.
+    fn starfield(&mut self, seed: u64, per: usize, dot: i32) {
         for y in 0..self.h {
             let t = y as f32 / self.h.max(1) as f32;
             let c = [0, 1, 2].map(|i| BG_TOP[i] + (BG_BOT[i] - BG_TOP[i]) * t);
@@ -57,8 +62,7 @@ impl Canvas {
             }
         }
         let mut r = Rng::new(seed);
-        let n = self.w * self.h / 450;
-        let dot = (self.w / 160).max(1) as i32;
+        let n = self.w * self.h / per;
         for _ in 0..n {
             let (x, y) = (r.below(self.w) as i32, r.below(self.h) as i32);
             let b = r.range(0.15, 0.7);
@@ -245,6 +249,53 @@ fn main() {
     save("pkg-mark.png", icon(128, true).png(true));
     save("thumbnail.png", thumbnail(90, 58).png(false));
     save("thumbnail@2x.png", thumbnail(180, 116).png(false));
+    // macOS: fondo de la ventana del .dmg (macos/package.sh las une en un TIFF para Retina).
+    save("dmg-background.png", dmg(1).png(false));
+    save("dmg-background@2x.png", dmg(2).png(false));
+}
+
+/// Posiciones de los iconos en la ventana del .dmg (puntos, a 1x); macos/package.sh usa las mismas.
+const DMG_ICONS: [f32; 2] = [170.0, 470.0];
+const DMG_ICON_Y: f32 = 235.0;
+
+/// Fondo del .dmg (640x400 puntos, escala `k`): rótulo, flecha del .saver a «Screen Savers» y,
+/// bajo cada icono, una pastilla de tono medio donde Finder escribe el nombre, legible tanto con
+/// la letra negra del modo claro como con la blanca del modo oscuro (contraste ~4,5:1 con ambas).
+fn dmg(k: usize) -> Canvas {
+    let (w, h, kf) = (640 * k, 400 * k, k as f32);
+    let mut c = Canvas::new(w, h);
+    c.starfield(23, 2400 * k * k, k as i32);
+    let (px, lw, lh) = logo();
+    let dw = (300.0f32).min(100.0 * lw as f32 / lh as f32) * kf;
+    let dh = lh as f32 * dw / lw as f32;
+    c.paste(&px, lw, lh, (w as f32 - dw) / 2.0, 95.0 * kf - dh / 2.0, dw);
+    let p = pal();
+    let (ax, bx, y0) = (DMG_ICONS[0] + 90.0, DMG_ICONS[1] - 90.0, DMG_ICON_Y);
+    let pill = [106.0, 113.0, 150.0];
+    for y in 0..h {
+        for x in 0..w {
+            // Coordenadas en puntos (1x) con el centro del píxel.
+            let q = ((x as f32 + 0.5) / kf, (y as f32 + 0.5) / kf);
+            let d = sd_segment(q, (ax, y0), (bx, y0)).min(sd_segment(q, (bx - 16.0, y0 - 15.0), (bx, y0))).min(sd_segment(q, (bx - 16.0, y0 + 15.0), (bx, y0)));
+            let a = (0.5 - (d - 2.5) * kf).clamp(0.0, 1.0);
+            if a > 0.0 {
+                c.blend(x as i32, y as i32, rgbf(gradient(&p, (q.0 - ax) / (bx - ax) * 0.6)), a);
+            }
+            for cx in DMG_ICONS {
+                let (dx, dy) = ((q.0 - cx).abs() - 74.0, (q.1 - 304.0).abs());
+                let r = 12.0;
+                let sd = (dx.max(0.0)).hypot(dy.max(0.0)) + dx.max(dy).min(0.0) - r;
+                let a = (0.5 - sd * kf).clamp(0.0, 1.0);
+                if a > 0.0 {
+                    c.blend(x as i32, y as i32, pill, a * 0.92);
+                }
+            }
+        }
+    }
+    let half = w as f32 / 2.0;
+    c.text("Arrastra a Screen Savers", half, (342.0 * kf) as i32, 2 * k as i32, FG);
+    c.text("Drag onto Screen Savers to install", half, (368.0 * kf) as i32, k as i32, rgbf(gradient(&p, 0.3)));
+    c
 }
 
 /// Miniatura horizontal: el rótulo sobre el fondo estrellado.
