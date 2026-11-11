@@ -57,8 +57,8 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-es.WelcomeLabel2=Esto instalará [name/ver]: el protector de pantalla de Omarchy con 16 animaciones, nativo y ligero (≈5 MB de RAM).%n%nEn el siguiente paso podrás personalizar el rótulo, los colores y los efectos con una vista previa en vivo.
-en.WelcomeLabel2=This will install [name/ver]: the Omarchy screensaver with 16 animations, native and lightweight (≈5 MB of RAM).%n%nIn the next step you can customize the banner, colors and effects with a live preview.
+es.WelcomeLabel2=Esto instalará [name/ver]: el protector de pantalla de Omarchy con 35 animaciones, nativo y ligero (≈5 MB de RAM).%n%nEn el siguiente paso podrás personalizar el rótulo, los colores y los efectos con una vista previa en vivo.
+en.WelcomeLabel2=This will install [name/ver]: the Omarchy screensaver with 35 animations, native and lightweight (≈5 MB of RAM).%n%nIn the next step you can customize the banner, colors and effects with a live preview.
 
 [CustomMessages]
 es.PageTitle=Personaliza tu protector
@@ -85,8 +85,8 @@ es.ThemeRandom=Aleatorio en cada inicio
 en.ThemeRandom=Random on every start
 es.LEffects=Efectos
 en.LEffects=Effects
-es.FxAll=Todos (16)
-en.FxAll=All (16)
+es.FxAll=Todos (35)
+en.FxAll=All (35)
 es.FxClassic=Clásicos de Omarchy (6)
 en.FxClassic=Omarchy classics (6)
 es.FxModern=Nuevos (10)
@@ -324,6 +324,8 @@ end;
 function BuildIni: TArrayOfString;
 var
   A: TArrayOfString;
+  I: Integer;
+  K: String;
 begin
   AddLine(A, '# Screensaver FX');
   AddLine(A, 'banner=' + BannerValue);
@@ -332,11 +334,13 @@ begin
   AddLine(A, 'theme=' + ThemeIds[ThemeCombo.ItemIndex]);
   AddLine(A, 'size=' + SizeValue);
   AddLine(A, 'effects=' + FxValues[FxCombo.ItemIndex]);
-  if Cv('lang', '') <> '' then
-    AddLine(A, 'lang=' + Cv('lang', ''));
-  { Lo que el asistente no pregunta se conserva tal cual (se elige en el configurador). }
-  if Cv('screens', '') <> '' then
-    AddLine(A, 'screens=' + Cv('screens', ''));
+  { Lo que el asistente no pregunta (idioma, letra, pantallas...) se conserva tal cual. }
+  for I := 0 to CfgKeys.Count - 1 do
+  begin
+    K := CfgKeys[I];
+    if (K <> 'banner') and (K <> 'title') and (K <> 'subtitle') and (K <> 'theme') and (K <> 'size') and (K <> 'effects') and (CfgVals[I] <> '') then
+      AddLine(A, K + '=' + CfgVals[I]);
+  end;
   Result := A;
 end;
 
