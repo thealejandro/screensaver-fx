@@ -38,6 +38,7 @@ Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con
 ### Windows 10/11
 
 - **Instalador:** descarga `ScreensaverFX-Setup.exe` de [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest). Permite personalizar el rótulo, los colores y los efectos con una vista previa en vivo.
+- **winget** (en revisión en el catálogo de Microsoft; funcionará cuando lo aprueben): `winget install thealejandro.ScreensaverFX`
 - **Terminal** (sin permisos de administrador):
 
   ```powershell
@@ -67,6 +68,7 @@ El instalador no está firmado, así que SmartScreen puede avisar: «Más inform
 
 - **Arrastrar:** abre `ScreensaverFX.dmg` de [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest) y arrastra el protector sobre «Screen Savers» (Finder pide tu contraseña porque se instala para todos los usuarios).
 - **Instalador:** `ScreensaverFX.pkg`, de la misma página.
+- **Homebrew:** `brew install --cask thealejandro/tap/screensaver-fx` (sin aviso de Gatekeeper; `brew upgrade` lo actualiza).
 - **Terminal:**
 
   ```bash
