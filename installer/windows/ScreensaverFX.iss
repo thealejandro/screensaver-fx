@@ -57,8 +57,8 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-es.WelcomeLabel2=Esto instalará [name/ver]: el protector de pantalla de Omarchy con 35 animaciones, nativo y ligero (≈5 MB de RAM).%n%nEn el siguiente paso podrás personalizar el rótulo, los colores y los efectos con una vista previa en vivo.
-en.WelcomeLabel2=This will install [name/ver]: the Omarchy screensaver with 35 animations, native and lightweight (≈5 MB of RAM).%n%nIn the next step you can customize the banner, colors and effects with a live preview.
+es.WelcomeLabel2=Esto instalará [name/ver]: el protector de pantalla de Omarchy con 41 animaciones, nativo y ligero (≈5 MB de RAM).%n%nEn el siguiente paso podrás personalizar el rótulo, los colores y los efectos con una vista previa en vivo.
+en.WelcomeLabel2=This will install [name/ver]: the Omarchy screensaver with 41 animations, native and lightweight (≈5 MB of RAM).%n%nIn the next step you can customize the banner, colors and effects with a live preview.
 
 [CustomMessages]
 es.PageTitle=Personaliza tu protector
@@ -85,8 +85,8 @@ es.ThemeRandom=Aleatorio en cada inicio
 en.ThemeRandom=Random on every start
 es.LEffects=Efectos
 en.LEffects=Effects
-es.FxAll=Todos (35)
-en.FxAll=All (35)
+es.FxAll=Todos (41)
+en.FxAll=All (41)
 es.FxClassic=Clásicos de Omarchy (6)
 en.FxClassic=Omarchy classics (6)
 es.FxModern=Nuevos (10)
