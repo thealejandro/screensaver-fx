@@ -254,6 +254,13 @@ fn effects_rotate_without_immediate_repeats() {
         assert!(order.len() >= 90, "{ini}: solo {} efectos en 60 min", order.len());
         assert!(order.iter().all(|id| allowed.contains(id)), "{ini}: efecto no seleccionado");
         assert!(order.windows(2).all(|w| w[0] != w[1]), "{ini}: efecto repetido seguido: {order:?}");
+        // Bolsa barajada: en cada tanda salen todos una vez antes de repetir ninguno.
+        for tanda in order.chunks_exact(allowed.len()) {
+            let mut t = tanda.to_vec();
+            t.sort_unstable();
+            t.dedup();
+            assert_eq!(t.len(), allowed.len(), "{ini}: tanda con repetidos: {tanda:?}");
+        }
         let mut distinct = order.clone();
         distinct.sort_unstable();
         distinct.dedup();

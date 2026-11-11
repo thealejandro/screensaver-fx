@@ -124,6 +124,8 @@ pub struct Engine {
     raster: Option<Raster>,
     phase: Phase,
     last_fx: Option<usize>,
+    /// Efectos que faltan por salir en esta tanda (se sacan del final).
+    bag: Vec<usize>,
     last_t: f64,
     /// Sorteo de efecto y tema: depende solo de la semilla, igual en todos los monitores.
     seq: Rng,
@@ -212,6 +214,7 @@ impl Engine {
             ctx,
             phase: Phase::Gap(FIRST_GAP),
             last_fx: None,
+            bag: Vec::new(),
             last_t: 0.0,
             seq,
             cycle: 0,
@@ -251,17 +254,32 @@ impl Engine {
         }
     }
 
+    /// Siguiente efecto de la bolsa: cada efecto elegido sale una vez, en orden barajado, antes
+    /// de repetirse ninguno; al rebarajar, el primero nunca es el último que se vio.
+    fn next_fx(&mut self) -> usize {
+        if self.bag.is_empty() {
+            let mut set = self.cfg.effects.clone();
+            set.sort_unstable();
+            set.dedup();
+            // Fisher-Yates con el sorteo común: el mismo orden en todos los monitores.
+            for i in (1..set.len()).rev() {
+                set.swap(i, self.seq.below(i + 1));
+            }
+            // Se saca por el final: que el último de la nueva tanda no sea el que acaba de salir.
+            if set.len() > 1 && set.last().copied() == self.last_fx {
+                let n = set.len();
+                set.swap(0, n - 1);
+            }
+            self.bag = set;
+        }
+        self.bag.pop().unwrap_or(0)
+    }
+
     /// Empieza el siguiente efecto exactamente en `at` (no en el cuadro en que se nota), para
     /// que todos los monitores cambien a la vez aunque cada uno dibuje en momentos distintos.
     /// Si ya terminó antes de `t` (un motor que se une tarde), solo se sortea y se salta.
     fn start_next(&mut self, at: f64, t: f64) {
-        let set = &self.cfg.effects;
-        let mut pool: Vec<usize> = set.iter().copied().filter(|&i| Some(i) != self.last_fx).collect();
-        // Un solo efecto (o el mismo repetido, `effects=neon,neon`): se repite.
-        if pool.is_empty() {
-            pool = set.clone();
-        }
-        let idx = pool[self.seq.below(pool.len())];
+        let idx = self.next_fx();
         if self.cfg.theme == ThemeSel::Random {
             self.ctx.pal = THEMES[self.seq.below(THEMES.len())].palette();
         }
