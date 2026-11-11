@@ -1,6 +1,35 @@
 # Screensaver FX
 
-Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 29 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 32 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
+Protector de pantalla nativo para Windows (`.scr`), macOS (`.saver`) y Linux con Omarchy (en la terminal), con las animaciones del screensaver de Omarchy y 29 efectos nuevos. El núcleo está en Rust (`core/`, sin dependencias de plataforma) y cada sistema tiene un envoltorio fino: los 35 efectos y la letra del rótulo son los mismos en los tres. No usa ningún motor web y ocupa unos 5 MB de RAM. En Windows deja de dibujar mientras la pantalla está apagada.
+
+## Efectos
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/storm.gif" width="49%" alt="storm">
+  <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/retro.gif" width="49%" alt="retro">
+  <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/spiral.gif" width="49%" alt="spiral">
+  <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/radar.gif" width="49%" alt="radar">
+</p>
+
+<details>
+<summary>Los 35 efectos</summary>
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/neon.gif" width="260" alt="Neón"><br>Neón | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/starfield.gif" width="260" alt="Estrellas"><br>Estrellas | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/terminal.gif" width="260" alt="Terminal"><br>Terminal |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/glitch.gif" width="260" alt="Glitch"><br>Glitch | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/plasma.gif" width="260" alt="Plasma"><br>Plasma | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/clock.gif" width="260" alt="Reloj"><br>Reloj |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/decrypt.gif" width="260" alt="Descifrado"><br>Descifrado | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/rain.gif" width="260" alt="Lluvia"><br>Lluvia | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/beams.gif" width="260" alt="Rayos"><br>Rayos |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/slide.gif" width="260" alt="Deslizar"><br>Deslizar | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/scatter.gif" width="260" alt="Dispersión"><br>Dispersión | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/burn.gif" width="260" alt="Fuego"><br>Fuego |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/matrix.gif" width="260" alt="Matrix"><br>Matrix | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/waves.gif" width="260" alt="Olas"><br>Olas | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/spotlights.gif" width="260" alt="Focos"><br>Focos |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/wipe.gif" width="260" alt="Barrido"><br>Barrido | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/relay.gif" width="260" alt="Relevo"><br>Relevo | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/comet.gif" width="260" alt="Cometa"><br>Cometa |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/tide.gif" width="260" alt="Marea"><br>Marea | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/vortex.gif" width="260" alt="Remolino"><br>Remolino | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/ripple.gif" width="260" alt="Gota"><br>Gota |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/fireflies.gif" width="260" alt="Luciérnagas"><br>Luciérnagas | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/aurora.gif" width="260" alt="Aurora"><br>Aurora | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/laser.gif" width="260" alt="Láser"><br>Láser |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/equalizer.gif" width="260" alt="Ecualizador"><br>Ecualizador | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/mosaic.gif" width="260" alt="Mosaico"><br>Mosaico | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/storm.gif" width="260" alt="Tormenta"><br>Tormenta |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/blinds.gif" width="260" alt="Persiana"><br>Persiana | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/spiral.gif" width="260" alt="Espiral"><br>Espiral | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/fireworks.gif" width="260" alt="Fuegos artificiales"><br>Fuegos artificiales |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/bounce.gif" width="260" alt="Rebote"><br>Rebote | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/crystal.gif" width="260" alt="Cristal"><br>Cristal | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/retro.gif" width="260" alt="Retro"><br>Retro |
+| <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/bubbles.gif" width="260" alt="Burbujas"><br>Burbujas | <img src="https://raw.githubusercontent.com/thealejandro/screensaver-fx/media/fx/radar.gif" width="260" alt="Radar"><br>Radar | |
+
+</details>
 
 ## Instalar
 
@@ -149,4 +178,5 @@ cargo run -p ssfx-core --example snap --release -- snaps auto 1920 1080 "" 0.1,0
 cargo run -p ssfx-core --example banner -- "Título" "subtítulo" shadow                             # el rótulo, en la terminal
 cargo run -p ssfx-core --example brand --release -- installer/assets                              # icono e imágenes
 cargo run -p ssfx-core --example desk --release -- desk relay,comet,tide 8                          # escritorio de 3 monitores a PNG
+cargo run -p ssfx-core --example gif --release -- fx                                                # GIFs de la galería (rama media)
 ```
