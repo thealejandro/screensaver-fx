@@ -561,6 +561,28 @@ struct Ink {
     /// Puntos del grano del papel, calculados una vez por tamaño de rejilla.
     paper: Vec<(i32, i32)>,
     size: (i32, i32),
+    /// Forma de cada mancha: celdas relativas a la gota con su distancia normalizada al borde
+    /// (la mancha de radio `r` cubre las que tienen `n <= r`), ordenadas de dentro afuera.
+    shapes: Vec<Vec<(i8, i8, f32)>>,
+}
+
+/// Celdas de la mancha de `d` a su tamaño final, con la misma regla de borde que `cover_at`.
+fn shape(d: &Drop, seed: u32) -> Vec<(i8, i8, f32)> {
+    let (bx, by) = (d.x.floor(), d.y.floor());
+    let lim = (d.size * 1.2).ceil() as i32 + 1;
+    let mut v = Vec::new();
+    for oy in -lim..=lim {
+        for ox in -lim..=lim {
+            let (ddx, ddy) = (bx + ox as f32 + 0.5 - d.x, by + oy as f32 + 0.5 - d.y);
+            let bucket = ((ddy * 2.0).atan2(ddx) / TAU * 12.0).round() as u32;
+            let n = dist(ddx, ddy) / (0.62 + 0.55 * hf(d.id, bucket, seed));
+            if n <= d.size {
+                v.push((ox as i8, oy as i8, n));
+            }
+        }
+    }
+    v.sort_unstable_by(|a, b| a.2.total_cmp(&b.2));
+    v
 }
 
 pub fn ink(c: &mut Ctx) -> Box<dyn Effect> {
@@ -613,7 +635,8 @@ pub fn ink(c: &mut Ctx) -> Box<dyn Effect> {
             drops.iter().filter_map(|d| cover_at(d, tx, ty, seed)).fold(9.2f32, f32::min)
         })
         .collect();
-    let mut fx = Ink { drops, reveal, seed, paper: Vec::new(), size: (-1, -1) };
+    let shapes = drops.iter().map(|d| shape(d, seed)).collect();
+    let mut fx = Ink { drops, reveal, seed, paper: Vec::new(), size: (-1, -1), shapes };
     fx.paper_for(c.g.cols, c.g.rows);
     Box::new(fx)
 }
@@ -645,7 +668,7 @@ impl Effect for Ink {
         }
         // Al secarse, la tinta se aclara hasta desaparecer.
         let dry = 1.0 - smooth((t - 8.6) / 2.6);
-        for d in &self.drops {
+        for (i, d) in self.drops.iter().enumerate() {
             let impact = d.start + FALL;
             if t < impact {
                 // La gota cae con un pequeño brillo de superficie mojada.
@@ -658,28 +681,21 @@ impl Effect for Ink {
                 continue;
             }
             let tint = mix(gradient(&c.pal, d.ca), gradient(&c.pal, d.cb), 0.5);
-            let (rr, rw) = (r.ceil() as i32 + 1, (r.ceil() * 2.0) as i32 + 2);
-            for dy in -rr..=rr {
-                for dx in -rw..=rw {
-                    let (px, py) = (d.x + dx as f32 * 0.5, d.y + dy as f32);
-                    let (ddx, ddy) = (px - d.x, py - d.y);
-                    // Borde irregular: el radio depende del ángulo.
-                    let bucket = ((ddy * 2.0).atan2(ddx) / TAU * 12.0).round() as u32;
-                    let edge = r * (0.62 + 0.55 * hf(d.id, bucket, self.seed));
-                    let d2 = dist(ddx, ddy);
-                    if d2 > edge {
-                        continue;
-                    }
-                    let k = 1.0 - d2 / edge.max(0.01);
-                    let (ch, v) = if k > 0.6 {
-                        ('▓', 0.6 + 0.4 * k)
-                    } else if k > 0.25 {
-                        ('▒', 0.38 + 0.5 * k)
-                    } else {
-                        ('░', 0.18 + 0.45 * k)
-                    };
-                    c.g.put(px as i32, py as i32, ch, scale(tint, v * dry));
+            // Borde irregular ya calculado: la mancha crece recorriendo su forma de dentro afuera.
+            let (bx, by) = (d.x.floor() as i32, d.y.floor() as i32);
+            for &(ox, oy, n) in &self.shapes[i] {
+                if n > r {
+                    break;
                 }
+                let k = 1.0 - n / r;
+                let (ch, v) = if k > 0.6 {
+                    ('▓', 0.6 + 0.4 * k)
+                } else if k > 0.25 {
+                    ('▒', 0.38 + 0.5 * k)
+                } else {
+                    ('░', 0.18 + 0.45 * k)
+                };
+                c.g.put(bx + ox as i32, by + oy as i32, ch, scale(tint, v * dry));
             }
         }
         // Las letras, reveladas por la tinta que las cubre (o por el secado).
