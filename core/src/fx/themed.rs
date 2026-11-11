@@ -273,60 +273,104 @@ impl Effect for Circuit {
 // ── Volcado hex ─────────────────────────────────────────────────────────────
 
 const HEXD: &[u8; 16] = b"0123456789abcdef";
+/// Ancho de un bloque de volcado: 8 de offset + 2 de hueco + 48 de hex + 1 de hueco + 16 ASCII + 1.
+const BLOCK: i32 = 76;
+/// Cambios de celda por segundo: con 60 fps solo una fracción del volcado cambia en cada cuadro.
+const SCRAMBLE: f32 = 2.5;
 
-/// Las columnas de un volcado hexadecimal llenan la pantalla y cambian a cada instante; las celdas
-/// que caen sobre el rótulo se descodifican, de dígito hex a la letra real.
+/// Las columnas de un volcado hexadecimal llenan la pantalla, con bloques de offset + 16 bytes +
+/// ASCII uno al lado de otro; cada celda cambia en su propio momento y las que caen sobre el
+/// rótulo se descodifican, de dígito hex a la letra real.
 struct Hexdump {
     seed: u32,
+    /// Fase de cambio por celda (en unidades de paso): cuándo salta su contenido.
+    phase: Vec<f32>,
+    /// (paso, carácter, clase de brillo) por celda: el hash solo se repite si el paso cambió.
+    cache: Vec<(u32, char, u8)>,
+    size: (i32, i32),
 }
 
 pub fn hexdump(c: &mut Ctx) -> Box<dyn Effect> {
-    Box::new(Hexdump { seed: c.rng.next_u64() as u32 })
+    let mut fx = Hexdump { seed: c.rng.next_u64() as u32, phase: Vec::new(), cache: Vec::new(), size: (-1, -1) };
+    fx.fit(c.g.cols, c.g.rows);
+    Box::new(fx)
 }
 
 impl Hexdump {
-    fn byte(&self, row: u32, j: u32, frame: u32) -> u8 {
-        hash3(self.seed ^ row, j, frame) as u8
+    /// (Re)calcula las fases por celda si cambió el tamaño de la rejilla.
+    fn fit(&mut self, cols: i32, rows: i32) {
+        if self.size == (cols, rows) {
+            return;
+        }
+        self.size = (cols, rows);
+        let n = (cols.max(0) * rows.max(0)) as usize;
+        self.phase.clear();
+        self.phase.resize(n, 0.0);
+        self.cache.clear();
+        self.cache.resize(n, (u32::MAX, ' ', 0));
+        for gy in 0..rows.max(0) {
+            for gx in 0..cols.max(0) {
+                self.phase[(gy * cols + gx) as usize] = hf(gx as u32, gy as u32, self.seed) * 1024.0;
+            }
+        }
     }
 
-    /// (carácter, brillo) del volcado en la celda de pantalla `(gx, gy)`.
-    fn glyph(&self, gx: i32, gy: i32, frame: u32) -> (char, f32) {
+    /// (carácter, clase de brillo) del volcado en la celda de pantalla `(gx, gy)` en el paso
+    /// `slot`: 0 hueco, 1 offset, 2 hex, 3 ASCII.
+    fn glyph(&self, gx: i32, gy: i32, slot: u32) -> (char, u8) {
         let row = gy.max(0) as u32;
-        if gx < 0 {
-            (' ', 0.0)
-        } else if gx < 8 {
-            let v = (row.wrapping_mul(16) >> (4 * (7 - gx))) & 0xF;
-            (HEXD[v as usize] as char, 0.35)
-        } else if (10..58).contains(&gx) {
-            let (k, r) = ((gx - 10) / 3, (gx - 10) % 3);
+        let lx = gx.rem_euclid(BLOCK);
+        if lx < 8 {
+            let v = (row.wrapping_mul(16) >> (4 * (7 - lx))) & 0xF;
+            (HEXD[v as usize] as char, 1)
+        } else if (10..58).contains(&lx) {
+            let (k, r) = ((lx - 10) / 3, (lx - 10) % 3);
             if r == 2 {
-                (' ', 0.0)
+                (' ', 0)
             } else {
-                let b = self.byte(row, k as u32, frame);
-                (HEXD[(if r == 0 { b >> 4 } else { b & 0xF }) as usize] as char, 0.6)
+                let b = hash3(self.seed ^ row, k as u32, slot) as u8;
+                (HEXD[(if r == 0 { b >> 4 } else { b & 0xF }) as usize] as char, 2)
             }
-        } else if gx >= 59 {
-            let b = self.byte(row, (gx - 59) as u32, frame);
+        } else if (59..75).contains(&lx) {
+            let b = hash3(self.seed ^ row, (lx - 59) as u32, slot) as u8;
             let ch = if (32..127).contains(&b) { b as char } else { '·' };
-            (ch, 0.8)
+            (ch, 3)
         } else {
-            (' ', 0.0)
+            (' ', 0)
         }
     }
 }
 
 impl Effect for Hexdump {
     fn draw(&mut self, t: f32, _dt: f32, c: &mut Ctx) {
-        let frame = (t * 12.0) as u32;
         let fade = clamp01(t / 0.4) * (1.0 - smooth((t - 8.2) / 1.6));
         if fade > 0.0 {
-            // El volcado solo ocupa las primeras 75 columnas (offset + hex + ASCII).
-            for gy in 0..c.g.rows {
-                for gx in 0..c.g.cols.min(75) {
-                    let (ch, b) = self.glyph(gx, gy, frame);
-                    if b > 0.0 {
-                        c.g.put(gx, gy, ch, scale(gradient(&c.pal, 0.3 + 0.25 * b), b * fade));
-                    }
+            let off = scale(gradient(&c.pal, 0.3 + 0.25 * 0.35), 0.35 * fade);
+            let hex = scale(gradient(&c.pal, 0.3 + 0.25 * 0.6), 0.6 * fade);
+            let ascii = scale(gradient(&c.pal, 0.3 + 0.25 * 0.8), 0.8 * fade);
+            self.fit(c.g.cols, c.g.rows);
+            let (cols, rows) = (c.g.cols, c.g.rows);
+            let tt = t * SCRAMBLE;
+            for gy in 0..rows {
+                for gx in 0..cols {
+                    let i = (gy * cols + gx) as usize;
+                    // Tiempo cuantizado con fase propia por celda: el contenido solo cambia
+                    // cuando el paso salta, así que una fracción de celdas se repinta por cuadro.
+                    let slot = (tt + self.phase[i]) as u32;
+                    let (ch, cl) = if self.cache[i].0 == slot {
+                        (self.cache[i].1, self.cache[i].2)
+                    } else {
+                        let g = self.glyph(gx, gy, slot);
+                        self.cache[i] = (slot, g.0, g.1);
+                        g
+                    };
+                    let col = match cl {
+                        3 => ascii,
+                        2 => hex,
+                        1 => off,
+                        _ => continue,
+                    };
+                    c.g.put(gx, gy, ch, col);
                 }
             }
         }
@@ -347,7 +391,6 @@ impl Effect for Hexdump {
 // ── Latido ──────────────────────────────────────────────────────────────────
 
 const SWEEP: f32 = 10.6;
-const TRAIL: f32 = 26.0;
 
 /// La forma de un latido (ondas P-QRS-T) con la fase `u` del ciclo.
 fn ecg(u: f32) -> f32 {
@@ -368,7 +411,7 @@ impl Effect for Heartbeat {
         let (cols, rows) = (c.g.cols, c.g.rows);
         let cy = (c.y0 + c.art.h / 2) as f32;
         // Rejilla tenue de fondo.
-        let grid_col = scale(gradient(&c.pal, 0.5), 0.14);
+        let grid_col = scale(gradient(&c.pal, 0.5), 0.16);
         for gy in (0..rows).step_by(2) {
             for gx in (0..cols).step_by(3) {
                 c.g.put(gx, gy, '·', grid_col);
@@ -376,31 +419,34 @@ impl Effect for Heartbeat {
         }
         let head = t / SWEEP * cols.max(1) as f32;
         let speed = cols.max(1) as f32 / SWEEP;
-        let beats = cols.max(1) as f32 / 15.0;
-        let amp = 4.0f32;
-        // La traza: un punto brillante en la cabeza y una estela que se apaga detrás.
-        let first = (head - TRAIL).max(0.0) as i32;
+        let beats = cols.max(1) as f32 / 24.0;
+        // Picos QRS de ±4-5 filas.
+        let amp = 3.0f32;
+        // La estela cubre al menos el 60% del ancho y se apaga gradualmente de cabeza a cola.
+        let trail = (cols.max(1) as f32 * 0.62).max(28.0);
+        let fade = 1.0 - smooth((t - (SWEEP + 0.3)) / 1.2);
+        let first = (head - trail).max(0.0) as i32;
         let last = ((head as i32).min(cols - 1)).max(first - 1);
         for gx in first..=last {
             let u = (gx as f32 / cols.max(1) as f32 * beats).fract();
             let prev = (gx as f32 - 1.0) / cols.max(1) as f32 * beats;
             let y = cy - ecg(u) * amp;
             let age = (head - gx as f32).max(0.0);
-            let k = 1.0 - age / TRAIL;
-            let col = scale(mix(gradient(&c.pal, 0.85), WHITE, k * k * 0.7), 0.15 + 0.85 * k.max(0.0));
-            // Une los saltos bruscos de la aguja (QRS) con una línea vertical.
+            let k = clamp01(1.0 - age / trail);
+            let col = scale(mix(gradient(&c.pal, 0.7), WHITE, 0.2 + 0.8 * k * k), (0.15 + 0.85 * k) * fade);
+            // Une los saltos bruscos de la aguja (QRS) con una línea vertical; el trazo plano
+            // queda como una línea continua de bloques.
             let prev_y = cy - ecg(prev.fract()) * amp;
             let (lo, hi) = (prev_y.min(y).round() as i32, prev_y.max(y).round() as i32);
             for yy in lo..=hi {
-                c.g.put(gx, yy, '│', col);
+                c.g.put(gx, yy, if lo == hi { '█' } else { '│' }, col);
             }
-            if age > 1.5 {
-                continue;
+            if age <= 1.5 {
+                let ch = if k > 0.75 { '█' } else if k > 0.45 { '▓' } else if k > 0.2 { '▒' } else { '░' };
+                c.g.put(gx, y.round() as i32, ch, col);
             }
-            let ch = if k > 0.75 { '█' } else if k > 0.45 { '▓' } else if k > 0.2 { '▒' } else { '░' };
-            c.g.put(gx, y.round() as i32, ch, col);
         }
-        if (0.0..cols as f32).contains(&head) {
+        if fade > 0.0 && (0.0..cols as f32).contains(&head) {
             let u = (head / cols.max(1) as f32 * beats).fract();
             c.g.put(head as i32, (cy - ecg(u) * amp).round() as i32, '█', WHITE);
         }
@@ -476,6 +522,8 @@ impl Effect for Dna {
 // ── Tinta ───────────────────────────────────────────────────────────────────
 
 const FALL: f32 = 0.5;
+/// Segundos que tarda la mancha en expandirse hasta su tamaño final.
+const SPREAD: f32 = 1.5;
 
 /// (punto de impacto, inicio de la caída, colores, tamaño) por gota.
 struct Drop {
@@ -486,6 +534,21 @@ struct Drop {
     cb: f32,
     size: f32,
     id: u32,
+}
+
+/// Instante en que la mancha de `d` cubre la celda `(tx, ty)`, si la llega a cubrir.
+fn cover_at(d: &Drop, tx: f32, ty: f32, seed: u32) -> Option<f32> {
+    let (ddx, ddy) = (tx - d.x, ty - d.y);
+    // Borde irregular en el ángulo de la celda, con la misma regla que al dibujar.
+    let bucket = ((ddy * 2.0).atan2(ddx) / TAU * 12.0).round() as u32;
+    let edge = d.size * (0.62 + 0.55 * hf(d.id, bucket, seed));
+    let q = dist(ddx, ddy) / edge;
+    if q >= 1.0 {
+        return None;
+    }
+    // r = size * ease_out_cubic(p): se despeja p de q = ease_out_cubic(p).
+    let p = 1.0 - (1.0 - q).cbrt();
+    Some(d.start + FALL + SPREAD * p)
 }
 
 /// Gotas de tinta caen sobre el papel y se expanden como manchas de acuarela; las que cubren el
@@ -502,37 +565,52 @@ struct Ink {
 
 pub fn ink(c: &mut Ctx) -> Box<dyn Effect> {
     let seed = c.rng.next_u64() as u32;
-    let n = 10;
-    let drops = (0..n)
+    // 10-16 gotas; la mitad apunta cerca del rótulo, el resto cae en cualquier parte del papel.
+    let n = c.rng.range(10.0, 17.0) as i32;
+    let mut drops: Vec<Drop> = (0..n)
         .map(|k| {
-            // La mitad apunta cerca del rótulo; el resto, a cualquier parte del papel.
             let near = k % 2 == 0;
             let x = if near { c.x0 as f32 + c.rng.range(0.0, c.art.w.max(1) as f32) } else { c.rng.range(0.0, c.g.cols.max(1) as f32) };
             let y = if near { c.y0 as f32 + c.rng.range(0.0, c.art.h.max(1) as f32) } else { c.rng.range(0.0, c.g.rows.max(1) as f32) };
             Drop {
                 x,
                 y,
-                start: 0.3 + k as f32 * 0.6 + c.rng.range(0.0, 0.4),
+                start: 0.3 + k as f32 * 0.22 + c.rng.range(0.0, 0.3),
                 ca: c.rng.f32(),
                 cb: c.rng.f32(),
-                size: c.rng.range(4.0, 8.5),
+                size: if near { c.rng.range(8.0, 20.0) } else { c.rng.range(4.0, 8.0) },
                 id: k as u32,
             }
         })
-        .collect::<Vec<_>>();
-    // Cada letra se revela cuando la primera mancha que la cubre impacta; si ninguna la toca,
-    // la deja ver el secado final.
+        .collect();
+    // Hacia la mitad del efecto el rótulo entero está cubierto: donde ninguna gota llega,
+    // cae una extra sobre la letra.
+    let mut id = drops.len() as u32;
+    for &(x, y, _) in &c.art.cells {
+        let (tx, ty) = target(c, x, y);
+        let covered = drops.iter().any(|d| dist(tx - d.x, ty - d.y) <= d.size * 0.9);
+        if !covered && id < 48 {
+            drops.push(Drop {
+                x: tx,
+                y: ty,
+                start: c.rng.range(0.5, 4.0),
+                ca: c.rng.f32(),
+                cb: c.rng.f32(),
+                size: c.rng.range(9.0, 16.0),
+                id,
+            });
+            id += 1;
+        }
+    }
+    // Cada letra se revela en el instante en que la mancha que la cubre la alcanza; si ninguna
+    // la toca, la deja ver el secado final.
     let reveal = c
         .art
         .cells
         .iter()
         .map(|&(x, y, _)| {
             let (tx, ty) = target(c, x, y);
-            drops
-                .iter()
-                .filter(|d| dist(tx - d.x, ty - d.y) <= d.size * 1.15)
-                .map(|d| d.start + FALL + 0.15)
-                .fold(9.2f32, f32::min)
+            drops.iter().filter_map(|d| cover_at(d, tx, ty, seed)).fold(9.2f32, f32::min)
         })
         .collect();
     let mut fx = Ink { drops, reveal, seed, paper: Vec::new(), size: (-1, -1) };
@@ -575,7 +653,7 @@ impl Effect for Ink {
                 c.g.put(d.x as i32, y as i32, '█', mix(gradient(&c.pal, d.ca), WHITE, 0.4));
                 continue;
             }
-            let r = d.size * ease_out_cubic((t - impact) / 1.5);
+            let r = d.size * ease_out_cubic((t - impact) / SPREAD);
             if r <= 0.05 || dry <= 0.0 {
                 continue;
             }
@@ -594,11 +672,11 @@ impl Effect for Ink {
                     }
                     let k = 1.0 - d2 / edge.max(0.01);
                     let (ch, v) = if k > 0.6 {
-                        ('▓', 0.5 + 0.5 * k)
+                        ('▓', 0.6 + 0.4 * k)
                     } else if k > 0.25 {
-                        ('▒', 0.25 + 0.55 * k)
+                        ('▒', 0.38 + 0.5 * k)
                     } else {
-                        ('░', 0.1 + 0.5 * k)
+                        ('░', 0.18 + 0.45 * k)
                     };
                     c.g.put(px as i32, py as i32, ch, scale(tint, v * dry));
                 }
