@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensaver FX — live demo</title>
+<meta name="description" content="Native screensaver for Windows, macOS and Linux with 41 effects. Live WebAssembly demo.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#demo"><span class="brand-mark">▚▞</span> SCREENSAVER&nbsp;FX</a>
+  <nav class="nav">
+    <a href="#demo" data-es="Demo">Demo</a>
+    <a href="#about" data-es="Qué es">About</a>
+    <a href="#gallery" data-es="Galería">Gallery</a>
+    <a href="#install" data-es="Instalar">Install</a>
+    <a href="https://github.com/thealejandro/screensaver-fx" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+  <button id="lang" class="lang" type="button" title="language / idioma">ES</button>
+</header>
+
+<main>
+  <section id="demo" class="demo">
+    <canvas id="screen"></canvas>
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="demo-title">
+      <strong>LIVE DEMO</strong>
+      <span data-es="el motor real, compilado a WebAssembly — sin frameworks">the real engine, compiled to WebAssembly — no frameworks</span>
+    </div>
+    <div class="hud">
+      <label>
+        <span data-es="Efecto">Effect</span>
+        <select id="fx"></select>
+      </label>
+      <label>
+        <span data-es="Tema">Theme</span>
+        <select id="theme"></select>
+      </label>
+      <button id="fs" type="button" data-es="Pantalla completa">Fullscreen</button>
+    </div>
+    <div id="wasm-error" class="wasm-error" hidden>
+      <p data-es="No se pudo cargar la demo (WebAssembly). Sírvela por HTTP, no con file://.">
+        Could not load the demo (WebAssembly). Serve it over HTTP, not file://.
+      </p>
+    </div>
+  </section>
+
+  <section id="about" class="section">
+    <h1 data-es="¿Qué es Screensaver FX?">What is Screensaver FX?</h1>
+    <p class="lead" data-es="Un protector de pantalla nativo para Windows (.scr), macOS (.saver) y Linux (Omarchy, en la terminal): las animaciones del screensaver de Omarchy más 35 efectos nuevos. Un núcleo pequeño en Rust, sin motores web, unos 5 MB de RAM. Los mismos 41 efectos y la misma letra del rótulo en los tres sistemas.">
+      A native screensaver for Windows (.scr), macOS (.saver) and Linux (Omarchy, in the terminal):
+      the Omarchy screensaver animations plus 35 new effects. One small Rust core, no web engine,
+      about 5 MB of RAM. The same 41 effects and the same banner typeface on all three systems.
+    </p>
+    <ul class="chips">
+      <li data-es="41 efectos">41 effects</li>
+      <li data-es="11 temas de Omarchy">11 Omarchy themes</li>
+      <li data-es="Varios monitores sincronizados">Synced multi-monitor</li>
+      <li>~5 MB RAM</li>
+      <li data-es="Nativo: .scr, .saver, terminal">Native: .scr, .saver, terminal</li>
+      <li>MIT</li>
+    </ul>
+  </section>
+
+  <section id="gallery" class="section">
+    <h1 data-es="Galería">Gallery</h1>
+    <p class="lead" data-es="Los 41 efectos. Pulsa cualquiera para verlo en la demo de arriba.">
+      All 41 effects. Click any of them to run it in the demo above.
+    </p>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <section id="install" class="section">
+    <h1 data-es="Instalar">Install</h1>
+    <div class="cards">
+      <article class="card">
+        <h2>Windows 10/11</h2>
+        <pre><code>winget install thealejandro.ScreensaverFX</code></pre>
+        <p><span data-es="o descarga el instalador desde">or grab the installer from</span>
+          <a href="https://github.com/thealejandro/screensaver-fx/releases/latest" target="_blank" rel="noopener">Releases</a>.
+        </p>
+      </article>
+      <article class="card">
+        <h2>macOS 11+</h2>
+        <pre><code>brew install --cask thealejandro/tap/screensaver-fx</code></pre>
+        <p><span data-es="o abre el .dmg desde">or open the .dmg from</span>
+          <a href="https://github.com/thealejandro/screensaver-fx/releases/latest" target="_blank" rel="noopener">Releases</a>.
+        </p>
+      </article>
+      <article class="card">
+        <h2>Linux (Omarchy)</h2>
+        <pre><code>git clone https://github.com/thealejandro/screensaver-fx
+cd screensaver-fx
+./linux/install.sh</code></pre>
+        <p><span data-es="Requiere Omarchy con">Requires Omarchy with</span> <code>ttfx</code>;
+          <span data-es="sin Rust, el instalador descarga el binario de la última release.">without Rust, the installer downloads the latest release binary.</span>
+        </p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>
+    <a href="https://github.com/thealejandro/screensaver-fx" target="_blank" rel="noopener">github.com/thealejandro/screensaver-fx</a>
+    · MIT
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
