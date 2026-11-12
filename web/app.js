@@ -46,7 +46,11 @@ function currentIni() {
 
 function sizeCanvas() {
   const r = canvas.getBoundingClientRect();
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // Tope de ~2 Mpx: por encima el motor ya pinta celdas grandes y un lienzo 4K solo encarece cada
+  // fotograma; el navegador lo amplía (pixelado, ver style.css) sin coste por fotograma.
+  const MAX_PX = 1920 * 1080;
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(dpr, Math.sqrt(MAX_PX / Math.max(1, r.width * r.height)));
   canvas.width = Math.max(1, Math.round(r.width * dpr));
   canvas.height = Math.max(1, Math.round(r.height * dpr));
 }
@@ -56,10 +60,17 @@ function sizeCanvas() {
 const off = document.createElement('canvas');
 const offCtx = off.getContext('2d');
 let img = null;
+let rgbaPtr = 0; // búfer RGBA en la memoria del módulo
+let rgbaLen = 0;
+
+// Fuera de la vista (pestaña oculta o la demo fuera de pantalla en la página que la incrusta) no se
+// dibuja: no gasta CPU ni batería.
+let onScreen = true;
+new IntersectionObserver((e) => { onScreen = e[e.length - 1].isIntersecting; }).observe(canvas);
 
 function frame(nowMs) {
   requestAnimationFrame(frame);
-  if (!engine) return;
+  if (!engine || !onScreen || document.hidden) return;
   const t = nowMs / 1000; // monótono, origen irrelevante para el motor
 
   const ints = new Int32Array(memory.buffer, scratch, 13);
@@ -76,17 +87,22 @@ function frame(nowMs) {
   const scaledDown = wasm.ssfxw_dest(engine, scratch + 36);
   const [dx, dy, dw, dh] = ints.slice(9, 13);
 
+  // El motor convierte a RGBA en la memoria del módulo y el ImageData es una vista de esa zona:
+  // sin bucle por píxel en JS. La vista se rehace si cambia el tamaño o crece la memoria.
   if (off.width !== w || off.height !== h) {
     off.width = w;
     off.height = h;
-    img = offCtx.createImageData(w, h);
   }
-  // BGRX -> RGBA: en memoria cada píxel es B,G,R,X; ImageData quiere R,G,B,A.
-  const src = new Uint32Array(memory.buffer, px, w * h);
-  const dst = new Uint32Array(img.data.buffer);
-  for (let i = 0; i < src.length; i += 1) {
-    const v = src[i];
-    dst[i] = 0xFF000000 | ((v & 0xFF) << 16) | (v & 0xFF00) | ((v >> 16) & 0xFF);
+  const len = w * h * 4;
+  if (len !== rgbaLen) {
+    if (rgbaPtr) wasm.ssfxw_dealloc(rgbaPtr, rgbaLen);
+    rgbaPtr = wasm.ssfxw_alloc(len);
+    rgbaLen = len;
+    img = null;
+  }
+  wasm.ssfxw_rgba(engine, rgbaPtr);
+  if (!img || img.data.buffer !== memory.buffer) {
+    img = new ImageData(new Uint8ClampedArray(memory.buffer, rgbaPtr, len), w, h);
   }
   offCtx.putImageData(img, 0, 0);
 

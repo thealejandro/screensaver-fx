@@ -112,3 +112,20 @@ pub unsafe extern "C" fn ssfxw_dest(e: *const Engine, out: *mut i32) -> i32 {
     }
     l.scaled_down as i32
 }
+
+/// Copia el búfer como RGBA opaco (el orden de `ImageData`) en `dst`, que debe tener
+/// `buf_w * buf_h * 4` bytes (reservados con `ssfxw_alloc`). Hacerlo aquí y no en JS ahorra un
+/// bucle por píxel en cada fotograma. Devuelve 0 si no hay motor.
+///
+/// # Safety
+/// `e` debe ser NULL o un motor vivo; `dst`, un puntero a `buf_w * buf_h * 4` bytes escribibles.
+#[no_mangle]
+pub unsafe extern "C" fn ssfxw_rgba(e: *const Engine, dst: *mut u8) -> i32 {
+    let Some(e) = e.as_ref() else { return 0 };
+    let src = e.pixels();
+    let out = slice::from_raw_parts_mut(dst, src.len() * 4);
+    for (o, &v) in out.chunks_exact_mut(4).zip(src) {
+        o.copy_from_slice(&[(v >> 16) as u8, (v >> 8) as u8, v as u8, 0xFF]);
+    }
+    1
+}
