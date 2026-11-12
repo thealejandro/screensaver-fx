@@ -1,6 +1,6 @@
 # Screensaver FX
 
-**English** · [Español](README.es.md) · **[Live demo](https://thealejandro.github.io/screensaver-fx/)**
+**English** · [Español](README.es.md) · **[Live demo](https://thealejandro.dev/screensaver-fx)**
 
 A native, lightweight screensaver for Windows (`.scr`), macOS (`.saver`) and Linux with Omarchy (in the terminal), with the animations of the Omarchy screensaver plus 35 new effects. The core is written in Rust (`core/`, no platform dependencies) and each OS gets a thin wrapper, so all 41 effects and the banner font are identical everywhere. No web engine, about 5 MB of RAM, and on Windows it stops drawing while the display is off.
 
