@@ -20,7 +20,7 @@ use desk::{Desk, Screen};
 use fx::{Ctx, Effect, EFFECTS};
 use grid::Grid;
 use raster::{Raster, CH, CW};
-use rng::Rng;
+use rng::{hash3, Rng};
 
 /// Hora local de pared, la da la plataforma.
 #[repr(C)]
@@ -293,7 +293,7 @@ impl Engine {
         }
         // Azar del efecto: el mismo en todos los monitores, distinto en cada ciclo.
         self.ctx.rng = Rng::new(self.cfg.seed ^ self.cycle.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-        self.ctx.center();
+        self.ctx.place(hash3(self.cfg.seed as u32 ^ (self.cfg.seed >> 32) as u32, self.cycle as u32, 0));
         let fx = (def.make)(&mut self.ctx);
         self.phase = Phase::Run { fx, start: at, dur };
     }

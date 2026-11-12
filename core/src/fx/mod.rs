@@ -35,6 +35,20 @@ impl Ctx {
         self.x0 = ((self.g.cols - self.art.w) / 2).max(0);
         self.y0 = ((self.g.rows - self.art.h) / 2).max(0);
     }
+
+    /// Centra el rótulo y lo desplaza unas celdas según `k` (la semilla del ciclo, igual en todos
+    /// los monitores), para que no quede siempre en los mismos píxeles de una pantalla OLED.
+    pub fn place(&mut self, k: u32) {
+        let (dx, dy) = ((hash3(k, 1, 0x01ED) % 9) as i32 - 4, (hash3(k, 2, 0x01ED) % 5) as i32 - 2);
+        let at = |cols: i32, rows: i32, w: i32, h: i32| {
+            (((cols - w) / 2 + dx).clamp(0, (cols - w).max(0)), ((rows - h) / 2 + dy).clamp(0, (rows - h).max(0)))
+        };
+        let (w, h) = (self.art.w, self.art.h);
+        (self.x0, self.y0) = at(self.g.cols, self.g.rows, w, h);
+        for v in &mut self.desk.views {
+            (v.x0, v.y0) = at(v.layout.cols, v.layout.rows, w, h);
+        }
+    }
 }
 
 pub trait Effect {
@@ -168,6 +182,26 @@ mod tests {
     use crate::color::{accent_palette, THEMES};
     use crate::grid::EMPTY;
 
+
+    #[test]
+    fn rotulo_se_mueve_sin_salirse() {
+        let mut seen = std::collections::HashSet::new();
+        for (cols, rows) in [(120, 40), (60, 12), (30, 8)] {
+            let mut c = ctx(cols, rows, Art::default_art(), 1);
+            let (cx, cy) = (c.x0, c.y0);
+            for k in 0..200 {
+                c.place(k);
+                assert!(c.x0 >= 0 && c.y0 >= 0, "{cols}x{rows} {k}");
+                assert!(c.x0 + c.art.w <= cols.max(c.art.w) && c.y0 + c.art.h <= rows.max(c.art.h), "{cols}x{rows} {k}");
+                assert!((c.x0 - cx).abs() <= 4 && (c.y0 - cy).abs() <= 2);
+                assert_eq!((c.desk.views[0].x0, c.desk.views[0].y0), (c.x0, c.y0));
+                if cols == 120 {
+                    seen.insert((c.x0, c.y0));
+                }
+            }
+        }
+        assert!(seen.len() > 20, "{}", seen.len());
+    }
     fn ctx(cols: i32, rows: i32, art: Art, seed: u64) -> Ctx {
         let (art_w, art_h) = (art.w, art.h);
         let mut c = Ctx {
