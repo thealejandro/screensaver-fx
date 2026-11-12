@@ -1,0 +1,18 @@
+pkgbase = screensaver-fx-bin
+	pkgdesc = Terminal screensaver with 41 effects (standalone binary of Screensaver FX)
+	pkgver = 0.1.16
+	pkgrel = 1
+	url = https://github.com/thealejandro/screensaver-fx
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	provides = screensaver-fx
+	conflicts = screensaver-fx
+	source = LICENSE::https://raw.githubusercontent.com/thealejandro/screensaver-fx/v0.1.16/LICENSE
+	sha256sums = SKIP
+	source_x86_64 = screensaver-fx-0.1.16-x86_64::https://github.com/thealejandro/screensaver-fx/releases/download/v0.1.16/screensaver-fx-linux-x86_64
+	sha256sums_x86_64 = 20849d2c3b710f393015f4d36eb2cd39cc0a00c759fa784acd8c95bbe9c6a062
+	source_aarch64 = screensaver-fx-0.1.16-aarch64::https://github.com/thealejandro/screensaver-fx/releases/download/v0.1.16/screensaver-fx-linux-aarch64
+	sha256sums_aarch64 = d5b38703932a29b2b55ee9e2e377bb517dba3679eca06d56d7f9bf43beea00ea
+
+pkgname = screensaver-fx-bin

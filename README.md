@@ -41,6 +41,7 @@ A native, lightweight screensaver for Windows (`.scr`), macOS (`.saver`) and Lin
 
 - **Installer:** download `ScreensaverFX-Setup.exe` from [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest). It lets you customize the banner, colors and effects with a live preview.
 - **winget** (pending review in Microsoft's catalog; it will work once approved): `winget install thealejandro.ScreensaverFX`
+- **Scoop:** `scoop bucket add thealejandro https://github.com/thealejandro/scoop-bucket` and then `scoop install thealejandro/screensaver-fx`
 - **Terminal** (no admin rights):
 
   ```powershell

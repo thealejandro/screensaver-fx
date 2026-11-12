@@ -1,0 +1,21 @@
+# Comprueba que el PKGBUILD de AUR compila, que el binario arranca y que .SRCINFO está al día.
+name: aur
+on:
+  push:
+    paths: ['packaging/aur/**', '.github/workflows/aur.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  makepkg:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          useradd -m b && cp -r packaging/aur /home/b/pkg && chown -R b /home/b/pkg && cd /home/b/pkg
+          su b -c 'makepkg -f --noconfirm'
+          su b -c 'makepkg --printsrcinfo' | diff -u .SRCINFO -
+          pacman -U --noconfirm ./*.pkg.tar.zst
+          screensaver-fx --list | head -5
