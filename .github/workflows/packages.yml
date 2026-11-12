@@ -9,6 +9,8 @@ permissions:
 jobs:
   homebrew:
     runs-on: macos-latest
+    env:
+      HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - run: |
