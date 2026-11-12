@@ -291,3 +291,6 @@ a:hover { color: var(--accent); }
   .section { padding-top: 48px; }
   .demo-title span { display: none; }
 }
+
+/* El atributo hidden gana a cualquier display de arriba. */
+[hidden] { display: none !important; }
