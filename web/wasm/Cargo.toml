@@ -1,0 +1,12 @@
+[package]
+name = "ssfx-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Envoltorio WebAssembly del motor de Screensaver FX para la demo en vivo de la web"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ssfx-core = { path = "../../core" }
