@@ -103,7 +103,8 @@ fn quit() {
 /// tenga el foco (Windows no deja tomarlo a un proceso lanzado por el vigilante). La tecla o el
 /// clic que despierta se consume, como en el protector del sistema, para que no llegue a la app.
 unsafe extern "system" fn key_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    if code == HC_ACTION as i32 {
+    // Solo al pulsar: soltar la tecla que lanzó el protector (Enter en «Probar») no lo cierra.
+    if code == HC_ACTION as i32 && matches!(wp as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
         quit();
         return 1;
     }
@@ -216,6 +217,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             return 1;
         }
         WM_ACTIVATEAPP if !preview && wp == 0 => quit(),
+        // Se conectó o quitó un monitor o cambió la resolución: las ventanas ya no cubren bien el
+        // escritorio. Se cierra y, pasado el tiempo de espera, Windows lo relanza con la nueva
+        // disposición. Con la pantalla apagada no: algunos monitores DisplayPort se «desconectan» al dormir.
+        WM_DISPLAYCHANGE if !preview && !DISPLAY_OFF.get() => quit(),
         WM_SYSCOMMAND if !preview && matches!((wp & 0xFFF0) as u32, SC_SCREENSAVE | SC_CLOSE) => return 0,
         WM_CLOSE => {
             quit();
