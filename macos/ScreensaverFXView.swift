@@ -27,6 +27,7 @@ enum Settings {
         lang=\(get("lang", "auto"))
         screens=\(get("screens", "span"))
         font=\(get("font", "block"))
+        calm=\(get("calm", "0"))
         """
     }
 

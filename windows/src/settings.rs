@@ -7,6 +7,7 @@ use crate::sys::{self, wide};
 use crate::update;
 use ssfx_core::art::{default_text, MAX_SUBTITLE, MAX_TITLE};
 use ssfx_core::color::THEMES;
+use ssfx_core::config::FONTS;
 use ssfx_core::fx::EFFECTS;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -43,6 +44,9 @@ const ID_LBL_MINUTES: i32 = 123;
 const ID_UPDATE: i32 = 124;
 const ID_SCREENS: i32 = 125;
 const ID_IDENTIFY: i32 = 126;
+const ID_FONT: i32 = 127;
+const ID_CALM: i32 = 128;
+const ID_LBL_FONT: i32 = 129;
 
 const TIMER_PREVIEW: usize = 1;
 const TIMER_IDENTIFY: usize = 2;
@@ -60,11 +64,12 @@ const BANNERS: [&str; 3] = ["default", "text", "file"];
 const SIZES: [&str; 3] = ["s", "m", "l"];
 const LANGS: [&str; 3] = ["auto", "es", "en"];
 const SCREENS: [&str; 3] = ["span", "each", "main"];
+const CALMS: [&str; 2] = ["0", "1"];
 const DESKTOP: &str = "Control Panel\\Desktop";
 
 // Medidas en píxeles lógicos (96 ppp).
 const W: i32 = 780;
-const H: i32 = 622;
+const H: i32 = 684;
 const PAD: i32 = 24;
 const GAP: i32 = 12;
 /// Margen interior de las tarjetas.
@@ -75,7 +80,7 @@ const CTL_H: i32 = 32;
 const LABEL_H: i32 = 20;
 const STEP: i32 = 62;
 const CARD_Y: i32 = 84;
-const CARD_H: i32 = CP + 5 * STEP + LABEL_H + CTL_H + CP;
+const CARD_H: i32 = CP + 6 * STEP + LABEL_H + CTL_H + CP;
 const LEFT_W: i32 = 340;
 const RIGHT_X: i32 = PAD + LEFT_W + GAP;
 const RIGHT_W: i32 = W - PAD - RIGHT_X;
@@ -410,9 +415,11 @@ unsafe fn sync_enabled(hwnd: HWND) {
     show(hwnd, ID_EDIT_ART, b == 2);
     EnableWindow(item(hwnd, ID_TITLE), (b == 1) as BOOL);
     EnableWindow(item(hwnd, ID_SUBTITLE), (b == 1) as BOOL);
+    // El arte ASCII se dibuja tal cual: la letra solo vale para el rótulo por defecto y el texto.
+    EnableWindow(item(hwnd, ID_FONT), (b != 2) as BOOL);
     EnableWindow(item(hwnd, ID_MINUTES), active() as BOOL);
     // Las etiquetas no se deshabilitan (el tema las pintaría en relieve): solo cambian de color.
-    for id in [ID_LBL_TITLE, ID_LBL_SUBTITLE, ID_LBL_AFTER, ID_LBL_MINUTES, ID_ACTIVATE] {
+    for id in [ID_LBL_TITLE, ID_LBL_SUBTITLE, ID_LBL_FONT, ID_LBL_AFTER, ID_LBL_MINUTES, ID_ACTIVATE] {
         InvalidateRect(item(hwnd, id), core::ptr::null(), FALSE);
     }
     InvalidateRect(hwnd, core::ptr::null(), FALSE);
@@ -422,6 +429,7 @@ unsafe fn sync_enabled(hwnd: HWND) {
 unsafe fn label_off(hwnd: HWND, id: i32) -> bool {
     match id {
         ID_LBL_TITLE | ID_LBL_SUBTITLE => IsWindowEnabled(item(hwnd, ID_TITLE)) == 0,
+        ID_LBL_FONT => IsWindowEnabled(item(hwnd, ID_FONT)) == 0,
         ID_LBL_AFTER | ID_LBL_MINUTES => !active(),
         _ => false,
     }
@@ -429,10 +437,8 @@ unsafe fn label_off(hwnd: HWND, id: i32) -> bool {
 
 unsafe fn build_ini(hwnd: HWND) -> String {
     let (themes, effects) = (theme_values(), effect_values());
-    // La letra del rótulo aún no tiene control en esta ventana: se conserva la de config.ini.
-    let font = read_map().get("font").cloned().unwrap_or_else(|| "block".to_string());
     format!(
-        "# Screensaver FX\nbanner={}\ntitle={}\nsubtitle={}\ntheme={}\nsize={}\neffects={}\nlang={}\nscreens={}\nfont={font}\n",
+        "# Screensaver FX\nbanner={}\ntitle={}\nsubtitle={}\ntheme={}\nsize={}\neffects={}\nlang={}\nscreens={}\nfont={}\ncalm={}\n",
         BANNERS[combo_sel(hwnd, ID_BANNER).min(2)],
         text_of(hwnd, ID_TITLE),
         text_of(hwnd, ID_SUBTITLE),
@@ -441,6 +447,8 @@ unsafe fn build_ini(hwnd: HWND) -> String {
         effects[combo_sel(hwnd, ID_EFFECTS).min(effects.len() - 1)],
         LANGS[combo_sel(hwnd, ID_LANG).min(2)],
         SCREENS[combo_sel(hwnd, ID_SCREENS).min(2)],
+        FONTS[combo_sel(hwnd, ID_FONT).min(FONTS.len() - 1)].0,
+        CALMS[combo_sel(hwnd, ID_CALM).min(1)],
     )
 }
 
@@ -846,13 +854,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_TITLE | ID_SUBTITLE | ID_MINUTES if code == EN_SETFOCUS || code == EN_KILLFOCUS => {
                     InvalidateRect(hwnd, core::ptr::null(), FALSE);
                 }
-                ID_BANNER | ID_THEME | ID_SIZE | ID_EFFECTS | ID_LANG | ID_SCREENS => {
+                ID_BANNER | ID_THEME | ID_SIZE | ID_EFFECTS | ID_LANG | ID_SCREENS | ID_FONT | ID_CALM => {
                     InvalidateRect(lp as HWND, core::ptr::null(), FALSE);
                 }
                 _ => {}
             }
             let changed = match id {
-                ID_BANNER | ID_THEME | ID_SIZE | ID_EFFECTS | ID_LANG if code == CBN_SELCHANGE => {
+                ID_BANNER | ID_THEME | ID_SIZE | ID_EFFECTS | ID_LANG | ID_FONT | ID_CALM if code == CBN_SELCHANGE => {
                     sync_enabled(hwnd);
                     true
                 }
@@ -1320,6 +1328,16 @@ pub fn run(owner: Option<HWND>) {
         b.combo(ID_SIZE, rx, y + LABEL_H, half, &[tr("Pequeño", "Small"), tr("Mediano", "Medium"), tr("Grande", "Large")].map(String::from), pos(&SIZES, "size", 1));
         b.label(-1, tr("Idioma del reloj", "Clock language"), rx + half + GAP, y, half);
         b.combo(ID_LANG, rx + half + GAP, y + LABEL_H, half, &[tr("Del sistema", "System"), "Español", "English"].map(String::from), pos(&LANGS, "lang", 0));
+
+        // Letra del rótulo y, a la derecha, el modo calma.
+        y += STEP;
+        b.label(ID_LBL_FONT, tr("Letra del rótulo", "Banner typeface"), x, y, w);
+        let fonts = [tr("Bloque", "Block"), tr("Bloque con sombra", "Block with shadow"), tr("Solo contorno", "Outline only"), tr("Píxel 8×8 (con minúsculas)", "8×8 pixel (with lowercase)")];
+        let fpos = FONTS.iter().position(|f| f.0.eq_ignore_ascii_case(get("font").trim())).unwrap_or(0);
+        b.combo(ID_FONT, x, y + LABEL_H, w, &fonts.map(String::from), fpos);
+        b.label(-1, tr("Movimiento", "Motion"), rx, y, rw);
+        let calm = matches!(get("calm").trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on") as usize;
+        b.combo(ID_CALM, rx, y + LABEL_H, rw, &[tr("Normal", "Normal"), tr("Calma: a la mitad de velocidad", "Calm: half speed")].map(String::from), calm);
 
         // Última fila: cómo se reparten las pantallas y, al lado, qué número tiene cada una.
         y += STEP;

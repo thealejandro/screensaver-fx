@@ -21,17 +21,21 @@ final class ConfigSheet: NSObject {
     private let effects = NSPopUpButton()
     private let lang = NSPopUpButton()
     private let screens = NSPopUpButton()
+    private let font = NSPopUpButton()
+    private let calm = NSPopUpButton()
 
     private let banners = ["default", "text", "file"]
     private let sizes = ["s", "m", "l"]
     private let langs = ["auto", "es", "en"]
     private let screenModes = ["span", "each", "main"]
+    private let fonts = ["block", "shadow", "outline", "pixel"]
+    private let calms = ["0", "1"]
     private var themeIDs: [String] = ["auto", "random"]
     private var effectIDs: [String] = ["all", "classic", "modern"]
 
     init(onSave: @escaping () -> Void) {
         self.onSave = onSave
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 510), styleMask: [.titled], backing: .buffered, defer: true)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 590), styleMask: [.titled], backing: .buffered, defer: true)
         super.init()
         build()
         load()
@@ -88,6 +92,8 @@ final class ConfigSheet: NSObject {
         fill(effects, fxNames)
         fill(lang, [tr("Del sistema", "System"), "Español", "English"])
         fill(screens, [tr("Un escritorio: los efectos cruzan", "One desktop: effects cross over"), tr("Cada pantalla por su cuenta", "Each screen on its own"), tr("Solo la principal (resto en negro)", "Main screen only (rest black)")])
+        fill(font, [tr("Bloque", "Block"), tr("Bloque con sombra", "Block with shadow"), tr("Solo contorno", "Outline only"), tr("Píxel 8×8 (con minúsculas)", "8×8 pixel (with lowercase)")])
+        fill(calm, [tr("Normal", "Normal"), tr("Calma: a la mitad de velocidad", "Calm: half speed")])
         screens.toolTip = tr("El orden es el de Ajustes del Sistema › Pantallas.", "The order is the one in System Settings › Displays.")
 
         let cancel = NSButton(title: tr("Cancelar", "Cancel"), target: self, action: #selector(close))
@@ -102,10 +108,12 @@ final class ConfigSheet: NSObject {
             row(tr("Título", "Title"), title),
             row(tr("Subtítulo", "Subtitle"), subtitle),
             row(tr("Arte ASCII", "ASCII art"), artScroll),
+            row(tr("Letra del rótulo", "Banner typeface"), font),
             row(tr("Colores", "Colors"), theme),
             row(tr("Tamaño", "Size"), size),
             row(tr("Efectos", "Effects"), effects),
             row(tr("Idioma del reloj", "Clock language"), lang),
+            row(tr("Movimiento", "Motion"), calm),
             row(tr("Varias pantallas", "Multiple screens"), screens),
             buttons,
         ])
@@ -139,6 +147,8 @@ final class ConfigSheet: NSObject {
         select(effects, effectIDs, "effects", "all")
         select(lang, langs, "lang", "auto")
         select(screens, screenModes, "screens", "span")
+        select(font, fonts, "font", "block")
+        select(calm, calms, "calm", "0")
         syncEnabled()
     }
 
@@ -146,6 +156,8 @@ final class ConfigSheet: NSObject {
         let b = banner.indexOfSelectedItem
         title.isEnabled = b == 1
         subtitle.isEnabled = b == 1
+        // El arte ASCII se dibuja tal cual: la letra solo vale para el rótulo por defecto y el texto.
+        font.isEnabled = b != 2
         artView.isEditable = b == 2
         artView.textColor = b == 2 ? .labelColor : .disabledControlTextColor
     }
@@ -161,6 +173,8 @@ final class ConfigSheet: NSObject {
         d.set(effectIDs[max(0, effects.indexOfSelectedItem)], forKey: "effects")
         d.set(langs[max(0, lang.indexOfSelectedItem)], forKey: "lang")
         d.set(screenModes[max(0, screens.indexOfSelectedItem)], forKey: "screens")
+        d.set(fonts[max(0, font.indexOfSelectedItem)], forKey: "font")
+        d.set(calms[max(0, calm.indexOfSelectedItem)], forKey: "calm")
         d.synchronize()
         onSave()
         close()

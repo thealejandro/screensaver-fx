@@ -93,7 +93,7 @@ Para actualizar, `git pull` y volver a ejecutar `./linux/install.sh`. Para quita
 
 No modifica nada de Omarchy: copia el binario `screensaver-fx` y dos envoltorios (`ttfx` y `omarchy-screensaver`) a `~/.local/bin`, que va antes que `/usr/bin` en el PATH. El salvapantallas de Omarchy sigue llamando a `ttfx`; el envoltorio decide en cada ciclo entre una animación de Screensaver FX y un efecto de ttfx (con sus colores o con los del tema). Si una actualización de Omarchy cambia cómo lanza el protector, el envoltorio deja pasar la llamada tal cual y el protector vuelve a ser el original, sin romperse. Tras cada `omarchy update` un hook comprueba que todo sigue encajando y avisa con una notificación si hay algo que adaptar (detalle en `~/.local/state/omarchy/screensaver-check.log`).
 
-Sin configuración usa lo que ya tiene Omarchy: el rótulo de `~/.config/omarchy/branding/screensaver.txt` y los colores del tema activo. Para cambiarlo, `~/.config/screensaver-fx/config.ini` admite las mismas claves que en Windows (`banner`, `title`, `subtitle`, `font`, `theme`, `effects`, `lang`) y una propia:
+Sin configuración usa lo que ya tiene Omarchy: el rótulo de `~/.config/omarchy/branding/screensaver.txt` y los colores del tema activo. Para cambiarlo, `~/.config/screensaver-fx/config.ini` admite las mismas claves que en Windows (`banner`, `title`, `subtitle`, `font`, `theme`, `effects`, `lang`, `calm`) y una propia:
 
 | Clave | Qué hace |
 | --- | --- |
@@ -175,7 +175,11 @@ El rótulo puede ser el de por defecto, un texto propio (`banner=text` con `titl
 | `outline` | Solo el contorno del título |
 | `pixel` | Letra de píxel 8x8 de las versiones anteriores (conserva las minúsculas) |
 
-De momento `font` no tiene control en las ventanas de configuración: se escribe a mano en `%APPDATA%\ScreensaverFX\config.ini` (Windows), en `~/.config/screensaver-fx/config.ini` (Linux) o con `defaults -currentHost write` sobre la clave `font` del módulo (macOS). Guardar desde la ventana conserva el valor.
+En Windows y macOS se elige en la ventana de configuración (**Letra del rótulo**); en Linux, en `~/.config/screensaver-fx/config.ini`.
+
+## Modo calma
+
+`calm=1` (**Movimiento › Calma** en la ventana de configuración) lo pone todo a la mitad de velocidad: cada efecto dura el doble y los destellos se funden más despacio. Pensado para pantallas que están a la vista todo el día o para quien encuentre el movimiento demasiado vivo. Con varias pantallas siguen sincronizadas.
 
 ## Herramientas
 

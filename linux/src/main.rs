@@ -41,7 +41,7 @@ Opciones:
   --no-restore-cursor    deja el cursor oculto al terminar (lo usa el salvapantallas)
 
 Configuración: ~/.config/screensaver-fx/config.ini (banner, title, subtitle, font, theme,
-effects, lang). Sin ella usa el rótulo y los colores del tema de Omarchy.
+effects, lang, calm=1 para el modo calma). Sin ella usa el rótulo y los colores del tema de Omarchy.
 ";
 
 #[derive(Debug, Default, PartialEq)]

@@ -91,7 +91,7 @@ To update, `git pull` and run `./linux/install.sh` again. To remove it, `./linux
 
 It doesn't modify Omarchy: it copies the `screensaver-fx` binary and two wrappers (`ttfx` and `omarchy-screensaver`) to `~/.local/bin`, which comes before `/usr/bin` in the PATH. Omarchy's screensaver keeps calling `ttfx`; on each cycle the wrapper picks either a Screensaver FX animation or a ttfx effect. If an Omarchy update changes how the screensaver is launched, the wrapper passes the call through untouched and you get the original screensaver back, so nothing breaks. After every `omarchy update` a hook checks that everything still fits and sends a notification if something needs adapting (details in `~/.local/state/omarchy/screensaver-check.log`).
 
-With no configuration it uses what Omarchy already has: the banner from `~/.config/omarchy/branding/screensaver.txt` and the active theme's colors. To change it, `~/.config/screensaver-fx/config.ini` takes the same keys as on Windows (`banner`, `title`, `subtitle`, `font`, `theme`, `effects`, `lang`) plus one of its own:
+With no configuration it uses what Omarchy already has: the banner from `~/.config/omarchy/branding/screensaver.txt` and the active theme's colors. To change it, `~/.config/screensaver-fx/config.ini` takes the same keys as on Windows (`banner`, `title`, `subtitle`, `font`, `theme`, `effects`, `lang`, `calm`) plus one of its own:
 
 | Key | What it does |
 | --- | --- |
@@ -136,7 +136,11 @@ The banner can be the default one, your own text (`banner=text` with `title` and
 | `outline` | Title outline only |
 | `pixel` | 8x8 pixel font from earlier versions (keeps lowercase) |
 
-For now `font` has no control in the settings dialogs: set it by hand in `%APPDATA%\ScreensaverFX\config.ini` (Windows), in `~/.config/screensaver-fx/config.ini` (Linux) or with `defaults -currentHost write` on the module's `font` key (macOS). Saving from the dialog keeps the value.
+On Windows and macOS it is picked in the settings dialog (**Banner typeface**); on Linux, in `~/.config/screensaver-fx/config.ini`.
+
+## Calm mode
+
+`calm=1` (**Motion › Calm** in the settings dialog) plays everything at half speed: each effect lasts twice as long and flashes fade out more slowly. Meant for screens that are on view all day, or for anyone who finds the motion too busy. Multiple displays stay in sync.
 
 ## Building
 
