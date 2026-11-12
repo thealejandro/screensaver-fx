@@ -1,0 +1,38 @@
+# Prueba el cask de Homebrew y el manifiesto de Scoop de este repo como los instala un usuario.
+name: packages
+on:
+  push:
+    paths: ['Casks/**', 'bucket/**', '.github/workflows/packages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  homebrew:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          brew tap thealejandro/screensaver-fx "$GITHUB_WORKSPACE"
+          brew trust thealejandro/screensaver-fx || true
+          brew style thealejandro/screensaver-fx
+          brew audit --cask --online thealejandro/screensaver-fx/screensaver-fx
+          brew install --cask thealejandro/screensaver-fx/screensaver-fx
+          ! xattr -p com.apple.quarantine "$HOME/Library/Screen Savers/ScreensaverFX.saver" 2>/dev/null
+          brew uninstall --cask thealejandro/screensaver-fx/screensaver-fx
+          test ! -d "$HOME/Library/Screen Savers/ScreensaverFX.saver"
+  scoop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop install .\bucket\screensaver-fx.json
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs/ScreensaverFX'
+          if (-not (Get-ChildItem $dir -Filter *.scr)) { throw 'Falta el .scr' }
+          scoop uninstall screensaver-fx
+          Start-Sleep 3
+          if (Test-Path (Join-Path $dir 'unins000.exe')) { throw 'No se desinstaló' }

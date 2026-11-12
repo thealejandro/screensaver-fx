@@ -1,59 +1,60 @@
 #!/usr/bin/env bash
-# Publica la versión recién lanzada en Homebrew (thealejandro/homebrew-tap) y en winget
-# (PR a microsoft/winget-pkgs desde el fork thealejandro/winget-pkgs).
-#   GH_TOKEN=<PAT con public_repo> bash .github/packages.sh 0.1.16
-# Con DRY=1 solo genera los archivos en $OUT (por defecto ./pkg-out) sin subir nada.
+# Tras cada release: actualiza en este mismo repo el cask de Homebrew (Casks/), el manifiesto de
+# Scoop (bucket/) y los de winget (packaging/winget/), y con WINGET_TOKEN abre el PR a winget-pkgs.
+#   GH_TOKEN=<token con contents:write en este repo> bash .github/packages.sh 0.1.17
+# Con DRY=1 solo cambia los archivos, sin commit ni push.
 set -euo pipefail
 
 V="${1:?versión}"
 REPO=thealejandro/screensaver-fx
-OUT="${OUT:-pkg-out}"
 ID=thealejandro.ScreensaverFX
 WDIR=manifests/t/thealejandro/ScreensaverFX
-rm -rf "${OUT:?}" && mkdir -p "$OUT"
-
-if [ -z "${GH_TOKEN:-}" ] && [ -z "${DRY:-}" ]; then
-  echo "::warning::Falta el secreto PKG_TOKEN: no se actualizan Homebrew ni winget."
-  exit 0
-fi
+tmp=$(mktemp -d)
 
 # Sumas publicadas en la release (las mismas que comprueba el actualizador).
-if [ -n "${SUMS:-}" ]; then cp "$SUMS" "$OUT/SHA256SUMS.txt"; else
-  gh release download "v$V" -R "$REPO" -p SHA256SUMS.txt -D "$OUT"
+if [ -n "${SUMS:-}" ]; then cp "$SUMS" "$tmp/SHA256SUMS.txt"; else
+  gh release download "v$V" -R "$REPO" -p SHA256SUMS.txt -D "$tmp"
 fi
-sum() { awk -v f="$1" '$2 == f { print $1 }' "$OUT/SHA256SUMS.txt"; }
+sum() { awk -v f="$1" '$2 == f { print $1 }' "$tmp/SHA256SUMS.txt"; }
 SETUP=$(sum "ScreensaverFX-Setup-$V.exe")
 ZIP=$(sum ScreensaverFX-macOS.zip)
-[ -n "$SETUP" ] && [ -n "$ZIP" ] || { echo "Faltan sumas en SHA256SUMS.txt"; exit 1; }
+[ ${#SETUP} -eq 64 ] && [ ${#ZIP} -eq 64 ] || { echo "Faltan sumas en SHA256SUMS.txt"; exit 1; }
 
-# --- Homebrew --------------------------------------------------------------
-mkdir -p "$OUT/tap/Casks"
-CASK="$OUT/tap/Casks/screensaver-fx.rb"
-if [ -n "${DRY:-}" ]; then cp "${CASK_SRC:?}" "$CASK"; else
-  gh api repos/thealejandro/homebrew-tap/contents/Casks/screensaver-fx.rb -H "Accept: application/vnd.github.raw" > "$CASK"
-fi
-sed -i -E "s/^  version \".*\"/  version \"$V\"/; s/^  sha256 \".*\"/  sha256 \"$ZIP\"/" "$CASK"
+# Homebrew
+sed -i -E "s/^  version \".*\"/  version \"$V\"/; s/^  sha256 \".*\"/  sha256 \"$ZIP\"/" Casks/screensaver-fx.rb
 
-# --- winget: la última versión de packaging/winget sirve de plantilla --------
+# Scoop
+U="https://github.com/$REPO/releases/download/v$V/ScreensaverFX-Setup-$V.exe#/setup.exe"
+jq --indent 4 --arg v "$V" --arg u "$U" --arg h "$SETUP" '.version=$v | .url=$u | .hash=$h' bucket/screensaver-fx.json > "$tmp/s.json"
+mv "$tmp/s.json" bucket/screensaver-fx.json
+
+# winget: la última versión de packaging/winget sirve de plantilla.
 PREV=$(ls -d packaging/winget/$WDIR/*/ | xargs -n1 basename | sort -V | tail -1)
-WOUT="$OUT/winget/$WDIR/$V"
-mkdir -p "$WOUT"
-for f in packaging/winget/$WDIR/$PREV/*.yaml; do
-  sed -E "s/${PREV//./\\.}/$V/g; s/^(  InstallerSha256: ).*/\1$SETUP/; s/^ReleaseDate: .*/ReleaseDate: $(date -u +%F)/" "$f" > "$WOUT/$(basename "$f")"
-done
+WOUT="packaging/winget/$WDIR/$V"
+if [ "$PREV" != "$V" ]; then
+  mkdir -p "$WOUT"
+  for f in packaging/winget/$WDIR/$PREV/*.yaml; do
+    sed -E "s/${PREV//./\.}/$V/g; s/^(  InstallerSha256: ).*/\1$SETUP/; s/^ReleaseDate: .*/ReleaseDate: $(date -u +%F)/" "$f" > "$WOUT/$(basename "$f")"
+  done
+fi
 
-if [ -n "${DRY:-}" ]; then
-  echo "DRY: archivos en $OUT"
+[ -n "${DRY:-}" ] && { echo "DRY: archivos actualizados"; git status --short; exit 0; }
+
+git config user.name "github-actions[bot]"
+git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+git add Casks bucket packaging/winget
+if git commit -qm "chore: Homebrew, Scoop y winget a $V"; then
+  for _ in 1 2 3; do git pull -q --rebase && git push -q && break; sleep 5; done
+  echo "Homebrew y Scoop en $V"
+fi
+
+# winget: PR a microsoft/winget-pkgs desde el fork, solo con token y cuando el paquete ya está
+# en el catálogo (el primer PR lo aprueba Microsoft a mano).
+if [ -z "${WINGET_TOKEN:-}" ]; then
+  echo "::notice::Sin WINGET_TOKEN: el PR de winget $V se abre a mano con los archivos de $WOUT."
   exit 0
 fi
-
-# Homebrew: commit directo al tap.
-sha=$(gh api repos/thealejandro/homebrew-tap/contents/Casks/screensaver-fx.rb --jq .sha)
-gh api -X PUT repos/thealejandro/homebrew-tap/contents/Casks/screensaver-fx.rb \
-  -f message="screensaver-fx $V" -f sha="$sha" -f content="$(base64 -w0 "$CASK")" --jq .commit.sha
-echo "Homebrew actualizado a $V"
-
-# winget: solo cuando el paquete ya está en el catálogo (el primer PR lo aprueba Microsoft a mano).
+export GH_TOKEN="$WINGET_TOKEN"
 if ! gh api "repos/microsoft/winget-pkgs/contents/$WDIR" --silent 2>/dev/null; then
   echo "::warning::$ID aún no está en winget-pkgs; no se abre PR para $V."
   exit 0

@@ -1,0 +1,34 @@
+{
+    "version": "0.1.16",
+    "description": "Native, lightweight screensaver with the Omarchy animations and 41 terminal-style effects.",
+    "homepage": "https://github.com/thealejandro/screensaver-fx",
+    "license": "MIT",
+    "notes": "Screensaver FX updates itself; choose it in Settings › Personalization › Lock screen › Screen saver.",
+    "url": "https://github.com/thealejandro/screensaver-fx/releases/download/v0.1.16/ScreensaverFX-Setup-0.1.16.exe#/setup.exe",
+    "hash": "5aa2f4546a42fe7ac6384ec66efc2d761810e8812d8f2409c1bb8eb7dfea3e46",
+    "installer": {
+        "file": "setup.exe",
+        "args": [
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CURRENTUSER"
+        ],
+        "keep": false
+    },
+    "uninstaller": {
+        "script": [
+            "$u = Join-Path $env:LOCALAPPDATA 'Programs/ScreensaverFX/unins000.exe'",
+            "if (Test-Path $u) { Start-Process -Wait $u -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' }"
+        ]
+    },
+    "checkver": {
+        "github": "https://github.com/thealejandro/screensaver-fx"
+    },
+    "autoupdate": {
+        "url": "https://github.com/thealejandro/screensaver-fx/releases/download/v$version/ScreensaverFX-Setup-$version.exe#/setup.exe",
+        "hash": {
+            "url": "https://github.com/thealejandro/screensaver-fx/releases/download/v$version/SHA256SUMS.txt"
+        }
+    }
+}

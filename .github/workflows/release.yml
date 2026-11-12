@@ -208,14 +208,18 @@ jobs:
           bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
           gh release create "$GITHUB_REF_NAME" dist/* --title "Screensaver FX ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"
 
-  # Homebrew (commit al tap) y winget (PR a microsoft/winget-pkgs). Necesita el secreto PKG_TOKEN:
-  # un token clásico con el permiso public_repo. Sin él, avisa y no hace nada.
+  # Homebrew (Casks/) y Scoop (bucket/) viven en este repo: se actualizan con un commit a main usando
+  # el token del propio workflow. El PR a winget-pkgs solo se abre si existe el secreto PKG_TOKEN
+  # (token de grano fino con acceso al fork thealejandro/winget-pkgs); si no, se abre a mano.
   packages:
     needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Publicar en Homebrew y winget
+        with:
+          ref: main
+      - name: Homebrew, Scoop y winget
         env:
-          GH_TOKEN: ${{ secrets.PKG_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          WINGET_TOKEN: ${{ secrets.PKG_TOKEN }}
         run: bash .github/packages.sh "${GITHUB_REF_NAME#v}"

@@ -41,7 +41,7 @@ A native, lightweight screensaver for Windows (`.scr`), macOS (`.saver`) and Lin
 
 - **Installer:** download `ScreensaverFX-Setup.exe` from [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest). It lets you customize the banner, colors and effects with a live preview.
 - **winget** (pending review in Microsoft's catalog; it will work once approved): `winget install thealejandro.ScreensaverFX`
-- **Scoop:** `scoop bucket add thealejandro https://github.com/thealejandro/scoop-bucket` and then `scoop install thealejandro/screensaver-fx`
+- **Scoop:** `scoop bucket add screensaver-fx https://github.com/thealejandro/screensaver-fx` and then `scoop install screensaver-fx/screensaver-fx`
 - **Terminal** (no admin rights):
 
   ```powershell
@@ -69,7 +69,7 @@ The installer isn't signed, so SmartScreen may warn you: "More info" › "Run an
 
 - **Drag and drop:** open `ScreensaverFX.dmg` from [Releases](https://github.com/thealejandro/screensaver-fx/releases/latest) and drag the screensaver onto "Screen Savers" (Finder asks for your password because it installs for all users).
 - **Installer:** `ScreensaverFX.pkg`, from the same page.
-- **Homebrew:** `brew install --cask thealejandro/tap/screensaver-fx` (no Gatekeeper prompt; `brew upgrade` keeps it updated).
+- **Homebrew:** `brew tap thealejandro/screensaver-fx https://github.com/thealejandro/screensaver-fx` and then `brew install --cask thealejandro/screensaver-fx/screensaver-fx` (no Gatekeeper prompt; `brew upgrade` keeps it updated).
 - **Terminal:**
 
   ```bash
@@ -173,7 +173,7 @@ cargo build -p ssfx-term --release     # target/release/screensaver-fx
 git tag v0.1.0 && git push --tags
 ```
 
-GitHub Actions builds Windows (x64 + ARM64), macOS (universal) and Linux (x86_64 + aarch64, static), uploads the installers to Releases with a what-to-download table and the `feat`/`fix`/`perf` changes since the previous version (`.github/release-notes.sh`), and updates Homebrew.
+GitHub Actions builds Windows (x64 + ARM64), macOS (universal) and Linux (x86_64 + aarch64, static), uploads the installers to Releases with a what-to-download table and the `feat`/`fix`/`perf` changes since the previous version (`.github/release-notes.sh`), and updates Homebrew, Scoop and winget (`Casks/`, `bucket/` and `packaging/winget/` in this repo).
 
 ## Tools
 
