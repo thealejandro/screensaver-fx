@@ -15,7 +15,7 @@ jobs:
           set -euo pipefail
           brew tap thealejandro/screensaver-fx "$GITHUB_WORKSPACE"
           brew trust thealejandro/screensaver-fx || true
-          brew style thealejandro/screensaver-fx
+          brew style Casks/screensaver-fx.rb
           brew audit --cask --online thealejandro/screensaver-fx/screensaver-fx
           brew install --cask thealejandro/screensaver-fx/screensaver-fx
           ! xattr -p com.apple.quarantine "$HOME/Library/Screen Savers/ScreensaverFX.saver" 2>/dev/null

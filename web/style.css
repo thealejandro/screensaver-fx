@@ -294,3 +294,8 @@ a:hover { color: var(--accent); }
 
 /* El atributo hidden gana a cualquier display de arriba. */
 [hidden] { display: none !important; }
+
+/* Incrustada en thealejandro.dev (?embed): solo la demo, a todo el marco. */
+html.embed .top, html.embed main > section:not(#demo), html.embed footer { display: none !important; }
+html.embed, html.embed body { height: 100%; overflow: hidden; background: #000; }
+html.embed #demo { height: 100vh; min-height: 0; }

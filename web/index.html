@@ -6,6 +6,11 @@
 <title>Screensaver FX — live demo</title>
 <meta name="description" content="Native screensaver for Windows, macOS and Linux with 41 effects. Live WebAssembly demo.">
 <link rel="stylesheet" href="style.css">
+<script>
+  // La página pública está en thealejandro.dev; aquí solo se sirve la demo que esa página incrusta.
+  if (new URLSearchParams(location.search).has("embed")) document.documentElement.classList.add("embed");
+  else location.replace("https://thealejandro.dev/screensaver-fx");
+</script>
 </head>
 <body>
 
