@@ -723,3 +723,17 @@ fn screens_option_with_a_single_screen_changes_nothing() {
         }
     }
 }
+
+#[test]
+fn calm_mode_is_the_same_animation_at_half_speed() {
+    let ini = "effects=all";
+    let (mut calm, mut normal) = (Engine::new(1280, 720, cfg(&format!("{ini}\ncalm=1"), 99)), Engine::new(1280, 720, cfg(ini, 99)));
+    let mut t = 0.0;
+    // 30 s normales: el calmado ve el doble de tiempo real y tiene que ir fotograma a fotograma igual.
+    for frame in 0..900 {
+        t += 1.0 / 30.0;
+        assert_eq!(calm.tick(2.0 * t, NOW), normal.tick(t, NOW), "fotograma {frame}");
+        assert_eq!(calm.current_effect(), normal.current_effect(), "fotograma {frame}");
+        assert!(calm.pixels() == normal.pixels(), "fotograma {frame} distinto");
+    }
+}

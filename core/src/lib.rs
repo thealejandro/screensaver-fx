@@ -135,6 +135,8 @@ pub struct Engine {
 }
 
 const FIRST_GAP: f64 = 0.15;
+/// Velocidad del modo calma respecto a la normal.
+const CALM_SPEED: f64 = 0.5;
 const GAP: f64 = 0.6;
 const MAX_BEHIND: f64 = 86_400.0;
 
@@ -301,6 +303,9 @@ impl Engine {
     /// Avanza la animación a `t` segundos (monótono, desde el inicio). Devuelve true si cambió
     /// algún píxel: si es false la plataforma puede saltarse el dibujado.
     pub fn tick(&mut self, t: f64, now: WallTime) -> bool {
+        // Modo calma: el reloj del motor va a la mitad. Al escalar t (y no dt) todas las pantallas
+        // con la misma configuración siguen sincronizadas.
+        let t = if self.cfg.calm { t * CALM_SPEED } else { t };
         if !t.is_finite() || self.blank {
             // Un infinito dejaría el hueco o el efecto esperando para siempre: se ignora. Una
             // pantalla en negro no dibuja nunca.

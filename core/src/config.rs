@@ -103,6 +103,9 @@ pub struct Config {
     /// Rótulo propio (contenido de screensaver.txt), si hay.
     pub art: Option<String>,
     pub screens: Screens,
+    /// Modo calma: todo va a la mitad de velocidad (cada efecto dura el doble y los destellos se
+    /// funden más despacio). Para pantallas que se ven todo el día o a quien le moleste el movimiento.
+    pub calm: bool,
 }
 
 impl Config {
@@ -121,6 +124,7 @@ impl Config {
             seed,
             art: None,
             screens: Screens::Span,
+            calm: false,
         };
         for line in ini.lines() {
             let line = line.trim().trim_start_matches('\u{feff}');
@@ -171,6 +175,7 @@ impl Config {
                         cfg.effects = set;
                     }
                 }
+                "calm" => cfg.calm = matches!(v.as_str(), "1" | "true" | "yes" | "on"),
                 "screens" => {
                     cfg.screens = match v.as_str() {
                         "each" => Screens::Each,
@@ -393,6 +398,14 @@ mod tests {
         assert_eq!(c.banner, Banner::Text);
         assert_eq!(c.title, "Hola");
         assert_eq!(c.lang, Lang::En);
+    }
+
+    #[test]
+    fn calm_option() {
+        let c = |ini: &str| Config::parse(ini, ACCENT, 1, true).calm;
+        assert!(!c(""));
+        assert!(c("calm=1") && c("calm = ON") && c("calm=true") && c("calm=yes"));
+        assert!(!c("calm=0") && !c("calm=no"));
     }
 
     #[test]
