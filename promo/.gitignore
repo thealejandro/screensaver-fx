@@ -1,0 +1,9 @@
+node_modules/
+out/
+# Se generan con scripts/clips.py (motor real).
+public/clips/
+*.raw.mp4
+# Muestras VCSL e IR: se descargan (ver README), no se versionan.
+muestras/
+__pycache__/
+*.pyc

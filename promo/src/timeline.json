@@ -1,0 +1,31 @@
+{
+  "beat": 24,
+  "reel": [
+    {"id": "gancho", "beats": 8, "tr": 12, "marcas": {"titulo": 1.5}},
+    {"id": "efectos", "beats": 16, "tr": 12, "marcas": {"cada": 2}},
+    {"id": "temas", "beats": 12, "tr": 12, "marcas": {"cada": 2}},
+    {"id": "texto", "beats": 8, "tr": 12, "marcas": {"rotulo": 0.5, "arte": 4.5}},
+    {"id": "config", "beats": 8, "tr": 12, "marcas": {"mac": 4}},
+    {"id": "instalar", "beats": 8, "marcas": {"teclea": 0.5, "lineas": [3, 4, 5, 6]}},
+    {"id": "corte", "beats": 4},
+    {"id": "cierre", "beats": 10, "marcas": {"firma": 2}}
+  ],
+  "wide": [
+    {"id": "gancho", "beats": 12, "tr": 12, "marcas": {"titulo": 1.5}},
+    {"id": "clasicos", "beats": 12, "tr": 12, "marcas": {"cada": 2}},
+    {"id": "nuevos", "beats": 20, "tr": 12, "marcas": {"cada": 2}},
+    {"id": "temas", "beats": 16, "tr": 12, "marcas": {"filas": [0.5, 1.5, 2.5]}},
+    {"id": "texto", "beats": 12, "tr": 12, "marcas": {"rotulo": 0.5, "arte": 6.5}},
+    {"id": "config", "beats": 20, "tr": 12, "marcas": {"mac": 10}},
+    {"id": "instalar", "beats": 16, "marcas": {"teclea": 0.5, "lineas": [4, 5.5, 7, 8.5], "mac": 9}},
+    {"id": "corte", "beats": 4},
+    {"id": "cierre", "beats": 20, "marcas": {"firma": 2}}
+  ],
+  "estado": [
+    {"id": "gancho", "beats": 8, "tr": 12, "marcas": {"titulo": 1.5}},
+    {"id": "efectos", "beats": 12, "tr": 12, "marcas": {"cada": 3}},
+    {"id": "temas", "beats": 8, "marcas": {"cada": 2}},
+    {"id": "corte", "beats": 4},
+    {"id": "cierre", "beats": 10, "marcas": {"firma": 2}}
+  ]
+}
